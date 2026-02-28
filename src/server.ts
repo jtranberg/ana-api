@@ -30,7 +30,8 @@ const allowedOrigins = new Set([
   "http://localhost:5174",
   "http://127.0.0.1:5174",
   "https://wall-property-operations-platform.netlify.app",
-  "https://wall-syndica.netlify.app",
+  "https://mailroom-portal.netlify.app",
+  "https://document-portal.netlify.app"
 ]);
 
 const isNetlifyPreview = (origin: string) => /^https:\/\/.*\.netlify\.app$/.test(origin);
