@@ -1,0 +1,35 @@
+🔹 A.N.A. – AI Operations for Property Portfolios
+
+A.N.A. (Agentic Nova Assistant) is an AI-powered operations layer for real estate portfolios. It connects read-only to a property CMS, runs a syndication pipeline, and uses Amazon Nova to automatically audit, validate, and optimize listing data before distribution.
+
+The system consists of:
+
+A React/Vite AI Operations Console (frontend)
+
+An Express + Mongo API layer (control plane)
+
+A protected syndication engine (separate backend service)
+
+Amazon Nova foundation models for reasoning and structured outputs
+
+When a user clicks “Run Syndication”, A.N.A.:
+
+Triggers the external syndicator service
+
+Generates an Apartments.com-compatible XML feed
+
+Runs AI agents powered by Nova to:
+
+Detect data quality issues
+
+Flag compliance risks
+
+Suggest listing improvements
+
+Produce structured, explainable outputs
+
+Stores all findings and artifacts for auditability
+
+The platform is fully multi-tenant and SaaS-ready, with persistent runs, exports, issues, and AI suggestions stored in MongoDB.
+
+All source systems are read-only — no production data is modified. Instead, AI-generated improvements are exported as structured patch artifacts for safe review and approval.

@@ -1,0 +1,3 @@
+access                 AKIA2MJEJF47PFUCMKGH
+
+secret access key     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
