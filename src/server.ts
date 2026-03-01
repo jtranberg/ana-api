@@ -142,16 +142,16 @@ app.get("/api/runs/:id", (req, res) => {
     exports: [
       {
         id: "apartments_full_xml",
-        label: "Apartments.com Full XML",
+        label: "Download Apartments.com XML",
         format: "xml",
-        // use the dashboard-safe route if you add it:
         url: "/api/feeds/apartments/full.xml",
-        // OR if you keep the protected route (not recommended from browser):
-        // url: "/feeds/apartments/full.xml",
       },
     ],
   });
 });
+
+
+
 app.post("/api/run", async (req, res) => {
   const tenantId = String(req.body?.tenantId || "Wall");
 
