@@ -51,8 +51,8 @@ function getUnitsCollectionId(): string {
 }
 
 function wf(): WebflowClient {
-  if (!config?.webflowToken) throw new Error("Missing config.webflowToken");
-  return new WebflowClient(config.webflowToken);
+  if (!config?.webflowApiToken) throw new Error("Missing config.webflowToken");
+  return new WebflowClient(config.webflowApiToken);
 }
 
 /* =========================================================
@@ -188,7 +188,7 @@ webflowUnitsRouter.patch("/units/:id", requireAdmin, async (req: Request, res: R
     if (parsed.data.bedrooms !== undefined) fieldData.bedrooms = parsed.data.bedrooms;
     if (parsed.data.bathrooms !== undefined) fieldData.bathrooms = parsed.data.bathrooms;
 
-    const updated = await wf().updateItem(getUnitsCollectionId(), req.params.id, { fieldData });
+    const updated = await wf().updateItem(getUnitsCollectionId(), String(req.params.id), { fieldData });
     return res.json({ unit: updated });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
