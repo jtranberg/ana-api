@@ -19,6 +19,9 @@ import { getCanonicalFromWebflow } from "./domain/normalize.js";
 import { WebflowClient } from "./webflow/client.js";
 import { generateApartmentsFull } from "./feeds/generateFeed.js";
 
+import webflowUnitsRouter from "./routes/webflowUnits.js";
+
+
 dotenv.config();
 
 /* =========================================================
@@ -77,6 +80,9 @@ app.options(/.*/, cors());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+// Dashboard/API routes (optionally lock with DASHBOARD_TOKEN)
+app.use("/api/webflow/units", requireDashboardTokenIfConfigured, webflowUnitsRouter);
+app.use("/api/webflow", webflowUnitsRouter);
 
 /* =========================================================
    Helpers
@@ -238,8 +244,8 @@ app.post(
    - Supports ?available=true
 ========================================================= */
 app.get(
-  "/api/feeds/apartments/full.xml",
-  requireDashboardTokenIfConfigured,
+  "/feeds/apartments/full.xml",
+  requireFeedToken,
   asyncHandler(async (req, res) => {
     const onlyAvailable = qBool(req.query.available);
 
@@ -251,7 +257,6 @@ app.get(
 
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
 
-    // If you want “download” behavior, keep content-disposition; otherwise you can remove this.
     const filename = onlyAvailable ? "apartments_available.xml" : "apartments_full.xml";
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
