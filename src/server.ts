@@ -81,7 +81,7 @@ app.options(/.*/, cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 // Dashboard/API routes (optionally lock with DASHBOARD_TOKEN)
-app.use("/api/webflow/units", requireDashboardTokenIfConfigured, webflowUnitsRouter);
+
 app.use("/api/webflow", webflowUnitsRouter);
 
 /* =========================================================
