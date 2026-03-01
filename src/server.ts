@@ -135,15 +135,23 @@ app.get("/api/runs/:id", (req, res) => {
   const run = runs.find((r) => r._id === req.params.id);
   if (!run) return res.status(404).json({ error: "Run not found" });
 
-  // keep shape compatible with your RunDetail page
   res.json({
     run,
     issues: [],
     suggestions: [],
-    exports: [],
+    exports: [
+      {
+        id: "apartments_full_xml",
+        label: "Apartments.com Full XML",
+        format: "xml",
+        // use the dashboard-safe route if you add it:
+        url: "/api/feeds/apartments/full.xml",
+        // OR if you keep the protected route (not recommended from browser):
+        // url: "/feeds/apartments/full.xml",
+      },
+    ],
   });
 });
-
 app.post("/api/run", async (req, res) => {
   const tenantId = String(req.body?.tenantId || "Wall");
 
@@ -166,6 +174,24 @@ app.post("/api/run", async (req, res) => {
     run.status = "failed";
     run.error = err?.message || String(err);
     return res.status(500).json({ error: run.error, runId: run._id });
+  }
+});
+
+// Dashboard-safe XML download (no FEED_TOKEN)
+app.get("/api/feeds/apartments/full.xml", async (_req, res) => {
+  try {
+    const data = await getCanonicalFromWebflow();
+    const result = await generateApartmentsFull(data);
+
+    // adjust these if your generateApartmentsFull returns different keys
+    const xml = (result as any).xml ?? (result as any).content ?? (result as any);
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="apartments_full.xml"`);
+    return res.status(200).send(xml);
+  } catch (e: any) {
+    console.error("❌ XML export failed:", e);
+    return res.status(500).json({ error: e?.message || String(e) });
   }
 });
 
