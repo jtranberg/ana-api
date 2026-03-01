@@ -82,6 +82,16 @@ function requireFeedToken(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+
+app.get("/debug/env", requireFeedToken, (_req, res) => {
+  const mask = (v?: string) => (v ? v.slice(0, 6) + "…" + v.slice(-6) : null);
+
+  res.json({
+    WEBFLOW_COLLECTION_UNITS: mask(process.env.WEBFLOW_COLLECTION_UNITS),
+    WEBFLOW_COLLECTION_PROPERTIES: mask(process.env.WEBFLOW_COLLECTION_PROPERTIES),
+    WEBFLOW_API_TOKEN: process.env.WEBFLOW_API_TOKEN ? "set" : "missing",
+  });
+});
 /* =========================================================
    Health + Root
 ========================================================= */
