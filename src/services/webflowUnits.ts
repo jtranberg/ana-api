@@ -1,6 +1,6 @@
 // src/services/webflowUnits.ts
 /**
- * Webflow Units collection (v2) — TypeScript version
+ * Webflow Units collection (v2)
  * Uses direct fetch (no WebflowClient wrapper required)
  *
  * Required env:
@@ -10,7 +10,7 @@
  * Optional env:
  *   WEBFLOW_SITE_ID
  *
- * Field slugs (from your v2 collection response):
+ * Field slugs:
  * - available            (Switch)   -> "available"
  * - availability-date    (DateTime) -> "availability-date"
  * - rent                 (Number)   -> "rent"
@@ -22,99 +22,31 @@
  * - slug                 (PlainText)-> "slug"          (required)
  */
 
-export const WEBFLOW_SITE_ID = process.env.WEBFLOW_SITE_ID;
+export const WEBFLOW_SITE_ID: string | undefined = process.env.WEBFLOW_SITE_ID;
 
-const UNITS_COLLECTION_ID = process.env.WEBFLOW_COLLECTION_UNITS;
-const TOKEN = process.env.WEBFLOW_API_TOKEN;
+const API_BASE = "https://api.webflow.com/v2" as const;
 
-const API_BASE = "https://api.webflow.com/v2";
-
-export const UNIT_FIELDS = {
+const UNIT_FIELDS = {
   available: "available",
   availabilityDate: "availability-date",
   rent: "rent",
   bedrooms: "bedrooms",
   bathrooms: "bathrooms",
-
   unitNumber: "unit-number",
   propertyRef: "property-2",
-
   name: "name",
   slug: "slug",
 } as const;
 
-type UnitFieldKey = (typeof UNIT_FIELDS)[keyof typeof UNIT_FIELDS];
-
 export type WebflowV2Item = {
   id: string;
-  cmsLocaleId?: string;
-  lastPublished?: string;
-  lastUpdated?: string;
-  createdOn?: string;
-  isArchived?: boolean;
-  isDraft?: boolean;
   fieldData?: Record<string, unknown>;
 };
 
-type WebflowListResponse<TItem> = {
-  items: TItem[];
-  pagination?: {
-    limit: number;
-    offset: number;
-    total?: number;
-  };
-};
-
-export type UnitsSearchFilters = {
-  propertyId?: string;
-  propertyName?: string;
-  unitNumber?: string;
-  available?: boolean;
-  bedrooms?: number;
-  bathrooms?: number;
-  rentMin?: number;
-  rentMax?: number;
-  max?: number;
-};
-
-export type ApplyUpdateOnlyInput = {
-  tenantId: string;
-  matchKey: string;
-  rows: Array<Record<string, unknown>>;
-};
-
-export type ApplyUpdateOnlyResult = {
-  tenantId: string;
-  matchKey: string;
-  updated: number;
-  skipped: number;
-  missing: Array<Record<string, unknown>>;
-  errors: Array<Record<string, unknown>>;
-};
-
-export type ListUnitsPageInput = {
-  limit?: number;
-  offset?: number;
-  slug?: string;
-  name?: string;
-};
-
-type WebflowFetchArgs = {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  query?: Record<string, unknown>;
-  body?: unknown;
-};
-
-export class WebflowApiError extends Error {
+type WebflowError = Error & {
   status?: number;
   details?: unknown;
-  constructor(message: string, status?: number, details?: unknown) {
-    super(message);
-    this.name = "WebflowApiError";
-    this.status = status;
-    this.details = details;
-  }
-}
+};
 
 // --------------------------
 // Small parsing helpers
@@ -140,7 +72,10 @@ function toISODate(v: unknown): string | undefined {
 }
 
 function stripHtml(s: unknown): string {
-  return String(s ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return String(s ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function norm(s: unknown): string {
@@ -157,17 +92,32 @@ function slugify(s: unknown): string {
     .replace(/^-|-$/g, "");
 }
 
-function assertEnv(): asserts TOKEN is string {
-  if (!TOKEN) throw new Error("Missing WEBFLOW_API_TOKEN env var");
-  if (!UNITS_COLLECTION_ID) throw new Error("Missing WEBFLOW_COLLECTION_UNITS env var");
+function getUnitsCollectionId(): string {
+  const id = process.env.WEBFLOW_COLLECTION_UNITS;
+  if (!id) throw new Error("Missing WEBFLOW_COLLECTION_UNITS env var");
+  return id;
+}
+
+function getWebflowToken(): string {
+  const t = process.env.WEBFLOW_API_TOKEN;
+  if (!t) throw new Error("Missing WEBFLOW_API_TOKEN env var");
+  return t;
 }
 
 // --------------------------
 // Webflow fetch wrapper (consistent errors + headers)
 // --------------------------
-async function webflowFetch<T = unknown>(path: string, args: WebflowFetchArgs = {}): Promise<T> {
-  assertEnv();
-  const { method = "GET", query, body } = args;
+async function webflowFetch<T>(
+  path: string,
+  opts: {
+    method?: "GET" | "POST" | "PATCH";
+    query?: Record<string, unknown>;
+    body?: unknown;
+  } = {}
+): Promise<T> {
+  const token = getWebflowToken();
+
+  const { method = "GET", query, body } = opts;
 
   const url = new URL(`${API_BASE}${path}`);
   if (query) {
@@ -177,31 +127,31 @@ async function webflowFetch<T = unknown>(path: string, args: WebflowFetchArgs = 
     }
   }
 
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${TOKEN}`,
-    Accept: "application/json",
-    "accept-version": "2.0.0",
-  };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-
   const res = await fetch(url.toString(), {
     method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      "accept-version": "2.0.0",
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data: unknown = await res.json().catch(() => ({}));
+  const data = (await res.json().catch(() => ({}))) as any;
 
   if (!res.ok) {
-    const d = data as any;
     const details =
-      d?.message ||
-      d?.error ||
-      d?.msg ||
+      data?.message ||
+      data?.error ||
+      data?.msg ||
       (typeof data === "string" ? data : "") ||
       res.statusText;
 
-    throw new WebflowApiError(`Webflow API error ${res.status}: ${details}`, res.status, data);
+    const err = new Error(`Webflow API error ${res.status}: ${details}`) as WebflowError;
+    err.status = res.status;
+    err.details = data;
+    throw err;
   }
 
   return data as T;
@@ -210,7 +160,9 @@ async function webflowFetch<T = unknown>(path: string, args: WebflowFetchArgs = 
 // --------------------------
 // Build PATCH payload from CSV row
 // --------------------------
-function buildPatchFromRow(r: Record<string, unknown>): Record<string, unknown> {
+export type CsvRow = Record<string, unknown>;
+
+function buildPatchFromRow(r: CsvRow): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
 
   const available = toBool((r as any).available ?? (r as any).status);
@@ -231,8 +183,10 @@ function buildPatchFromRow(r: Record<string, unknown>): Record<string, unknown> 
   if (baths !== undefined) patch[UNIT_FIELDS.bathrooms] = baths;
 
   // Optional helpers
-  if ((r as any).unit_number != null) patch[UNIT_FIELDS.unitNumber] = String((r as any).unit_number).trim();
-  if ((r as any).property_id != null) patch[UNIT_FIELDS.propertyRef] = String((r as any).property_id).trim();
+  if ((r as any).unit_number != null)
+    patch[UNIT_FIELDS.unitNumber] = String((r as any).unit_number).trim();
+  if ((r as any).property_id != null)
+    patch[UNIT_FIELDS.propertyRef] = String((r as any).property_id).trim();
 
   // Only touch name/slug if provided OR safely derived
   const maybeName = String((r as any).name ?? "").trim();
@@ -245,8 +199,8 @@ function buildPatchFromRow(r: Record<string, unknown>): Record<string, unknown> 
     const u = String((r as any).unit_number ?? "").trim();
     if (p && u) {
       const derived = `${p} ${u}`;
-      patch[UNIT_FIELDS.name] = patch[UNIT_FIELDS.name] || derived;
-      patch[UNIT_FIELDS.slug] = patch[UNIT_FIELDS.slug] || slugify(derived);
+      patch[UNIT_FIELDS.name] = (patch[UNIT_FIELDS.name] as string | undefined) || derived;
+      patch[UNIT_FIELDS.slug] = (patch[UNIT_FIELDS.slug] as string | undefined) || slugify(derived);
     }
   }
 
@@ -264,28 +218,45 @@ function buildPatchFromRow(r: Record<string, unknown>): Record<string, unknown> 
 // --------------------------
 // WRITE: PATCH a Webflow item by itemId
 // --------------------------
-async function patchWebflowItem(args: { itemId: string; fieldData: Record<string, unknown> }): Promise<WebflowV2Item> {
-  const { itemId, fieldData } = args;
-  return webflowFetch<WebflowV2Item>(`/collections/${UNITS_COLLECTION_ID}/items/${itemId}`, {
+async function patchWebflowItem(args: { itemId: string; fieldData: Record<string, unknown> }) {
+  const collectionId = getUnitsCollectionId();
+  return webflowFetch(`/collections/${collectionId}/items/${args.itemId}`, {
     method: "PATCH",
-    body: { fieldData },
+    body: { fieldData: args.fieldData },
   });
 }
+
+export type ApplyUpdateOnlyArgs = {
+  tenantId: string;
+  matchKey: string;
+  rows: CsvRow[];
+};
+
+export type ApplyUpdateOnlyResult = {
+  tenantId: string;
+  matchKey: string;
+  updated: number;
+  skipped: number;
+  missing: Array<Record<string, unknown>>;
+  errors: Array<Record<string, unknown>>;
+};
 
 /**
  * CSV -> PATCH existing Webflow units (update-only)
  *
- * Supported matchKey values (normalized headers):
- * - "unit_id"     (Webflow item id) ✅ fastest / best
+ * Supported matchKey values:
+ * - "unit_id"     (Webflow item id)
  * - "slug"
  * - "name"
- * - "unit_number" (requires property_id in the row OR you accept first match)
+ * - "unit_number" (requires property_id recommended)
  *
- * NOTE: update-only = if no match found -> missing[], never creates.
+ * update-only = if no match found -> missing[], never creates.
  */
-export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): Promise<ApplyUpdateOnlyResult> {
-  const { tenantId, matchKey, rows } = input;
-
+export async function applyWebflowUnitsUpdateOnly({
+  tenantId,
+  matchKey,
+  rows,
+}: ApplyUpdateOnlyArgs): Promise<ApplyUpdateOnlyResult> {
   if (!matchKey) throw new Error("applyWebflowUnitsUpdateOnly requires matchKey");
   const key = String(matchKey).trim().toLowerCase();
 
@@ -294,10 +265,9 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
   const missing: Array<Record<string, unknown>> = [];
   const errors: Array<Record<string, unknown>> = [];
 
-  // Small in-memory cache to reduce repeat lookups for same keys
   const cache = new Map<string, string | null>(); // cacheKey -> unitItemId | null
 
-  async function resolveUnitItemId(row: Record<string, unknown>): Promise<string | null> {
+  async function resolveUnitItemId(row: CsvRow): Promise<string | null> {
     // 1) direct item id
     if (key === "unit_id") {
       const id = String((row as any).unit_id ?? "").trim();
@@ -310,7 +280,7 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
       if (!slug) return null;
 
       const cacheKey = `slug:${slug.toLowerCase()}`;
-      if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+      if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
 
       const it = await findUnitBySlug(slug);
       const id = it?.id ? String(it.id) : null;
@@ -318,13 +288,13 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
       return id;
     }
 
-    // 3) name (can be ambiguous; we take first match)
+    // 3) name (can be ambiguous; take first match)
     if (key === "name") {
       const name = String((row as any).name ?? "").trim();
       if (!name) return null;
 
       const cacheKey = `name:${name.toLowerCase()}`;
-      if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+      if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
 
       const items = await findUnitsByName(name);
       const it = items?.[0] || null;
@@ -340,9 +310,8 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
 
       const propertyId = String((row as any).property_id ?? "").trim(); // optional but recommended
       const cacheKey = `unit:${propertyId || "any"}:${unitNumber.toLowerCase()}`;
-      if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+      if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
 
-      // If property_id exists, do a strong search
       if (propertyId) {
         const found = await searchUnitsInNode({ propertyId, unitNumber, max: 5 });
         const it = found?.[0] || null;
@@ -351,7 +320,6 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
         return id;
       }
 
-      // If no property_id, do a weaker search by unitNumber only (can be slow/ambiguous)
       const found = await searchUnitsInNode({ unitNumber, max: 5 });
       const it = found?.[0] || null;
       const id = it?.id ? String(it.id) : null;
@@ -359,7 +327,9 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
       return id;
     }
 
-    throw new Error(`Unsupported matchKey "${matchKey}". Use one of: unit_id, slug, name, unit_number`);
+    throw new Error(
+      `Unsupported matchKey "${matchKey}". Use one of: unit_id, slug, name, unit_number`
+    );
   }
 
   for (let i = 0; i < rows.length; i++) {
@@ -368,10 +338,12 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
     let unitItemId: string | null = null;
     try {
       unitItemId = await resolveUnitItemId(r);
-    } catch (e) {
+    } catch (e: unknown) {
       skipped++;
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push({ row: i + 2, error: msg });
+      errors.push({
+        row: i + 2,
+        error: e instanceof Error ? e.message : String(e),
+      });
       continue;
     }
 
@@ -394,7 +366,7 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
     try {
       await patchWebflowItem({ itemId: unitItemId, fieldData: patch });
       updated++;
-    } catch (e) {
+    } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       const low = msg.toLowerCase();
 
@@ -412,20 +384,26 @@ export async function applyWebflowUnitsUpdateOnly(input: ApplyUpdateOnlyInput): 
 // --------------------------
 // READ: list + search
 // --------------------------
+export type ListUnitsPageArgs = {
+  limit?: number;
+  offset?: number;
+  slug?: string;
+  name?: string;
+};
 
-/**
- * Lists a page of units. Webflow v2 uses limit/offset.
- * NOTE: name/slug filters are supported (exact match), but
- * for arbitrary filters (property ref etc.) we paginate + filter in Node.
- */
-export async function listUnitsPage(input: ListUnitsPageInput = {}): Promise<WebflowListResponse<WebflowV2Item>> {
-  const { limit = 100, offset = 0, slug, name } = input;
+export async function listUnitsPage({
+  limit = 100,
+  offset = 0,
+  slug,
+  name,
+}: ListUnitsPageArgs = {}) {
+  const collectionId = getUnitsCollectionId();
 
   const query: Record<string, unknown> = { limit, offset };
   if (slug) query.slug = slugify(slug);
   if (name) query.name = String(name).trim();
 
-  return webflowFetch<WebflowListResponse<WebflowV2Item>>(`/collections/${UNITS_COLLECTION_ID}/items`, {
+  return webflowFetch<{ items?: WebflowV2Item[] }>(`/collections/${collectionId}/items`, {
     method: "GET",
     query,
   });
@@ -442,11 +420,24 @@ export async function findUnitsByName(name: string): Promise<WebflowV2Item[]> {
   return data?.items || [];
 }
 
+export type SearchUnitsFilters = {
+  propertyId?: string;
+  propertyName?: string;
+  unitNumber?: string;
+  available?: boolean;
+  bedrooms?: number;
+  bathrooms?: number;
+  rentMin?: number;
+  rentMax?: number;
+  max?: number;
+};
+
 /**
  * General “search” via pagination + in-memory filtering.
- * Use this when you want: propertyId, unitNumber, available, beds, rent range, etc.
  */
-export async function searchUnitsInNode(filters: UnitsSearchFilters = {}): Promise<WebflowV2Item[]> {
+export async function searchUnitsInNode(
+  filters: SearchUnitsFilters = {}
+): Promise<WebflowV2Item[]> {
   const {
     propertyId,
     propertyName,
@@ -471,23 +462,36 @@ export async function searchUnitsInNode(filters: UnitsSearchFilters = {}): Promi
     if (!items.length) break;
 
     for (const it of items) {
-      const fd = (it.fieldData || {}) as Record<string, unknown>;
+      const fd = it.fieldData || {};
 
-      // ✅ propertyId (strongest match)
-      if (propertyId && String(fd[UNIT_FIELDS.propertyRef] || "") !== String(propertyId)) continue;
+      // propertyId (strong)
+      if (propertyId && String(fd[UNIT_FIELDS.propertyRef] ?? "") !== String(propertyId)) continue;
 
-      // ✅ propertyName (friendly match)
+      // propertyName (friendly)
       if (wantPropName) {
-        const pn = norm(fd["property-name"]);
-        const ps = norm(fd["property-slug"]);
+        const pn = norm((fd as any)["property-name"]);
+        const ps = norm((fd as any)["property-slug"]);
         const unitName = norm(fd[UNIT_FIELDS.name]);
 
-        if (!pn.includes(wantPropName) && !ps.includes(wantPropName) && !unitName.includes(wantPropName)) continue;
+        if (
+          !pn.includes(wantPropName) &&
+          !ps.includes(wantPropName) &&
+          !unitName.includes(wantPropName)
+        ) {
+          continue;
+        }
       }
 
-      if (unitNumber && String(fd[UNIT_FIELDS.unitNumber] || "").trim() !== String(unitNumber).trim()) continue;
+      if (
+        unitNumber &&
+        String(fd[UNIT_FIELDS.unitNumber] ?? "").trim() !== String(unitNumber).trim()
+      ) {
+        continue;
+      }
 
-      if (available !== undefined && Boolean(fd[UNIT_FIELDS.available]) !== Boolean(available)) continue;
+      if (available !== undefined && Boolean(fd[UNIT_FIELDS.available]) !== Boolean(available)) {
+        continue;
+      }
 
       if (bedrooms !== undefined && Number(fd[UNIT_FIELDS.bedrooms]) !== Number(bedrooms)) continue;
       if (bathrooms !== undefined && Number(fd[UNIT_FIELDS.bathrooms]) !== Number(bathrooms)) continue;

@@ -19,7 +19,7 @@ import { getCanonicalFromWebflow } from "./domain/normalize.js";
 import { WebflowClient } from "./webflow/client.js";
 import { generateApartmentsFull } from "./feeds/generateFeed.js";
 
-import webflowUnitsRouter from "./routes/webflowUnits.js";
+import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
 
 
 dotenv.config();

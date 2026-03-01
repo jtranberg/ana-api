@@ -1,6 +1,5 @@
 // src/webflow/client.ts
-// Webflow Data API v2 client (read-only, CMS items + pagination)
-// Render Node 22 supports global fetch.
+// Webflow Data API v2 client (read + write)
 
 export type WebflowV2Item = {
   id: string;
@@ -22,6 +21,11 @@ export type WebflowItemsResponse = {
   };
 };
 
+type WebflowRequestOptions = {
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  body?: unknown;
+};
+
 export class WebflowClient {
   private token: string;
   private apiBase = "https://api.webflow.com/v2";
@@ -31,13 +35,18 @@ export class WebflowClient {
     this.token = token;
   }
 
-  private async request<T>(url: string): Promise<T> {
+  private async request<T>(path: string, opts: WebflowRequestOptions = {}): Promise<T> {
+    const url = path.startsWith("http") ? path : `${this.apiBase}${path}`;
+
     const res = await fetch(url, {
-      method: "GET",
+      method: opts.method ?? "GET",
       headers: {
         Authorization: `Bearer ${this.token}`,
+        Accept: "application/json",
         "Content-Type": "application/json",
+        "accept-version": "2.0.0",
       },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
 
     // simple 429 backoff + one retry
@@ -45,34 +54,26 @@ export class WebflowClient {
       const retryAfter = res.headers.get("retry-after");
       const waitMs = retryAfter ? Number(retryAfter) * 1000 : 1000;
       await new Promise((r) => setTimeout(r, Number.isFinite(waitMs) ? waitMs : 1000));
-      return this.request<T>(url);
+      return this.request<T>(path, opts);
     }
+
+    const data = (await res.json().catch(() => ({}))) as any;
 
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Webflow API error ${res.status} ${res.statusText}: ${text}`);
+      const msg = data?.message || data?.error || data?.msg || res.statusText;
+      throw new Error(`Webflow API error ${res.status} ${res.statusText}: ${msg}`);
     }
 
-    return (await res.json()) as T;
+    return data as T;
   }
 
-  /**
-   * Fetch one page of items for a collection (v2).
-   * limit max is 100. :contentReference[oaicite:2]{index=2}
-   */
+  // -------- READ --------
   async fetchItemsPage(collectionId: string, limit = 100, offset = 0): Promise<WebflowItemsResponse> {
-    const url =
-      `${this.apiBase}/collections/${collectionId}/items` +
-      `?limit=${encodeURIComponent(limit)}` +
-      `&offset=${encodeURIComponent(offset)}`;
-
-    return this.request<WebflowItemsResponse>(url);
+    return this.request<WebflowItemsResponse>(
+      `/collections/${collectionId}/items?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`
+    );
   }
 
-  /**
-   * Fetch ALL items in a collection (handles pagination).
-   * Filters out draft/archived by default (safer for syndication).
-   */
   async fetchAllItems(
     collectionId: string,
     opts: { limit?: number; includeDrafts?: boolean; includeArchived?: boolean } = {}
@@ -89,7 +90,6 @@ export class WebflowClient {
       const items = page.items ?? [];
       all.push(...items);
 
-      // v2 returns pagination.total when available; otherwise fallback to page size rule
       const total = page.pagination?.total;
       if (typeof total === "number") {
         offset += items.length;
@@ -104,6 +104,21 @@ export class WebflowClient {
       if (!includeDrafts && it.isDraft) return false;
       if (!includeArchived && it.isArchived) return false;
       return true;
+    });
+  }
+
+  // -------- WRITE --------
+  async createItem(collectionId: string, body: { fieldData: Record<string, unknown> }) {
+    return this.request<WebflowV2Item>(`/collections/${collectionId}/items`, {
+      method: "POST",
+      body,
+    });
+  }
+
+  async updateItem(collectionId: string, itemId: string, body: { fieldData: Record<string, unknown> }) {
+    return this.request<WebflowV2Item>(`/collections/${collectionId}/items/${itemId}`, {
+      method: "PATCH",
+      body,
     });
   }
 }

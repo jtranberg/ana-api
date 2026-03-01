@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { searchUnitsInNode } from "../services/webflowUnits.js";
+import { searchUnitsInNode } from "../services/webflowUnits.ts";
 
 export const webflowSearchRouter = Router();
 
