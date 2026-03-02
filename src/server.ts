@@ -21,7 +21,7 @@ import { generateApartmentsFull } from "./feeds/generateFeed.js";
 
 import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
 import importProxyRoutes from "./routes/importProxy.routes";
-
+import webflowPropertiesRoutes from "./routes/webflowProperties.Router";
 
 dotenv.config();
 
@@ -84,6 +84,8 @@ app.use(express.urlencoded({ extended: true }));
 // Dashboard/API routes (optionally lock with DASHBOARD_TOKEN)
 
 app.use("/api/webflow", webflowUnitsRouter);
+app.use("/api", importProxyRoutes);
+app.use("/api/webflow", webflowPropertiesRoutes);
 app.use("/api", importProxyRoutes);
 
 /* =========================================================
