@@ -21,7 +21,7 @@ export type WebflowItemsResponse = {
   };
 };
 
-type WebflowRequestOptions = {
+export type WebflowRequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
 };
@@ -67,6 +67,12 @@ export class WebflowClient {
     return data as T;
   }
 
+  // ✅ PUBLIC wrapper for routers/services
+  // This fixes "request is private" while keeping request() protected.
+  public v2<T = unknown>(path: string, opts: WebflowRequestOptions = {}): Promise<T> {
+    return this.request<T>(path, opts);
+  }
+
   // -------- READ --------
   async fetchItemsPage(collectionId: string, limit = 100, offset = 0): Promise<WebflowItemsResponse> {
     return this.request<WebflowItemsResponse>(
@@ -108,7 +114,7 @@ export class WebflowClient {
   }
 
   // -------- WRITE --------
-  async createItem(collectionId: string, body: { fieldData: Record<string, unknown> }) {
+  async createItem(collectionId: string, body: { fieldData: Record<string, unknown>; isDraft?: boolean }) {
     return this.request<WebflowV2Item>(`/collections/${collectionId}/items`, {
       method: "POST",
       body,
@@ -119,6 +125,12 @@ export class WebflowClient {
     return this.request<WebflowV2Item>(`/collections/${collectionId}/items/${itemId}`, {
       method: "PATCH",
       body,
+    });
+  }
+
+  async deleteItem(collectionId: string, itemId: string) {
+    return this.request<{ ok?: boolean }>(`/collections/${collectionId}/items/${itemId}`, {
+      method: "DELETE",
     });
   }
 }

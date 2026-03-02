@@ -21,7 +21,8 @@ import { generateApartmentsFull } from "./feeds/generateFeed.js";
 
 import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
 import importProxyRoutes from "./routes/importProxy.routes";
-import webflowPropertiesRoutes from "./routes/webflowProperties.Router";
+import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter";
+
 
 dotenv.config();
 
@@ -87,6 +88,8 @@ app.use("/api/webflow", webflowUnitsRouter);
 app.use("/api", importProxyRoutes);
 app.use("/api/webflow", webflowPropertiesRoutes);
 app.use("/api", importProxyRoutes);
+app.use("/api/webflow", webflowUnitsRouter);
+
 
 /* =========================================================
    Helpers
