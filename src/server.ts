@@ -20,7 +20,7 @@ import { WebflowClient } from "./webflow/client.js";
 import { generateApartmentsFull } from "./feeds/generateFeed.js";
 
 import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
-import importProxyRoutes from "./routes/importProxy.routes.js";
+import importProxyRoutes from "./routes/importProxy.routes";
 
 
 dotenv.config();
