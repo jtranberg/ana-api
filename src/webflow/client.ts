@@ -24,6 +24,7 @@ export type WebflowItemsResponse = {
 export type WebflowRequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
+  headers?: Record<string, string>;
 };
 
 export class WebflowClient {
@@ -35,7 +36,11 @@ export class WebflowClient {
     this.token = token;
   }
 
-  private async request<T>(path: string, opts: WebflowRequestOptions = {}): Promise<T> {
+  private async request<T>(
+    path: string,
+    opts: WebflowRequestOptions = {},
+    _retried429 = false
+  ): Promise<T> {
     const url = path.startsWith("http") ? path : `${this.apiBase}${path}`;
 
     const res = await fetch(url, {
@@ -45,30 +50,40 @@ export class WebflowClient {
         Accept: "application/json",
         "Content-Type": "application/json",
         "accept-version": "2.0.0",
+        ...(opts.headers || {}),
       },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
 
-    // simple 429 backoff + one retry
-    if (res.status === 429) {
+    // ✅ 429 backoff + ONE retry (prevents infinite recursion)
+    if (res.status === 429 && !_retried429) {
       const retryAfter = res.headers.get("retry-after");
       const waitMs = retryAfter ? Number(retryAfter) * 1000 : 1000;
       await new Promise((r) => setTimeout(r, Number.isFinite(waitMs) ? waitMs : 1000));
-      return this.request<T>(path, opts);
+      return this.request<T>(path, opts, true);
     }
 
-    const data = (await res.json().catch(() => ({}))) as any;
+    // ✅ Safe parse (handles non-JSON responses)
+    const raw = await res.text();
+    let data: any = {};
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      data = { raw };
+    }
 
     if (!res.ok) {
-      const msg = data?.message || data?.error || data?.msg || res.statusText;
+      const msg = data?.message || data?.error || data?.msg || res.statusText || "Unknown error";
       throw new Error(`Webflow API error ${res.status} ${res.statusText}: ${msg}`);
     }
 
     return data as T;
   }
 
-  // ✅ PUBLIC wrapper for routers/services
-  // This fixes "request is private" while keeping request() protected.
+  /**
+   * ✅ PUBLIC escape hatch for routers/services
+   * Allows: client.v2("/collections/...") without exposing request()
+   */
   public v2<T = unknown>(path: string, opts: WebflowRequestOptions = {}): Promise<T> {
     return this.request<T>(path, opts);
   }
@@ -126,6 +141,11 @@ export class WebflowClient {
       method: "PATCH",
       body,
     });
+  }
+
+  // ✅ Nice alias for routes: patchItem(...)
+  async patchItem(collectionId: string, itemId: string, fieldData: Record<string, unknown>) {
+    return this.updateItem(collectionId, itemId, { fieldData });
   }
 
   async deleteItem(collectionId: string, itemId: string) {

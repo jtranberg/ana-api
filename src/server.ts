@@ -21,10 +21,10 @@ import { generateApartmentsFull } from "./feeds/generateFeed.js";
 
 import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
 
-import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter";
-import importProxyRoutes from "./routes/importProxy.routes.js";
+import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter.js";
 
-
+import importRoutes from "./routes/import.routes.js";
+// import importProxyRoutes from "./routes/importProxy.routes.js";
 
 dotenv.config();
 
@@ -86,10 +86,12 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 // Dashboard/API routes (optionally lock with DASHBOARD_TOKEN)
 
-app.use("/api/webflow", webflowUnitsRouter);
+
 app.use("/api/webflow", webflowPropertiesRoutes);
 app.use("/api/webflow", webflowUnitsRouter);
-app.use("/api", importProxyRoutes);
+app.use("/api", importRoutes);
+
+// app.use("/api", importProxyRoutes);
 
 /* =========================================================
    Helpers
@@ -276,7 +278,7 @@ app.get(
    These are the endpoints you typically hand to Apartments.com.
    If they can only fetch URLs (no custom headers), use ?token=...
 ========================================================= */
-app.get("/feeds/apartments/full.xml", requireFeedToken, apartmentsFullFeed);
+
 
 app.get(
   "/jobs/generate-apartments",
