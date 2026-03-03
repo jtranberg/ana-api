@@ -207,13 +207,13 @@ app.get("/api/runs/:id", (req, res) => {
         id: "apartments_full_xml",
         label: "Download FULL Apartments XML",
         format: "xml",
-        url: "/feeds/apartments/full.xml",
+        url: `/feeds/apartments/full.xml?token=${FEED_TOKEN}`
       },
       {
         id: "apartments_available_xml",
         label: "Download AVAILABLE Apartments XML",
         format: "xml",
-        url: "/feeds/apartments/full.xml?available=true",
+        url: `/feeds/apartments/full.xml?available=true&token=${FEED_TOKEN}`
       },
     ],
   });
