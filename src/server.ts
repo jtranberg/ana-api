@@ -198,7 +198,6 @@ app.get("/api/runs/:id", (req, res) => {
   const run = runs.find((r) => r._id === req.params.id);
   if (!run) return res.status(404).json({ error: "Run not found" });
 
-  // exports include BOTH full + available feed downloads
   return res.json({
     run,
     issues: [],
@@ -208,13 +207,13 @@ app.get("/api/runs/:id", (req, res) => {
         id: "apartments_full_xml",
         label: "Download FULL Apartments XML",
         format: "xml",
-        url: "/api/feeds/apartments/full.xml",
+        url: "/feeds/apartments/full.xml",
       },
       {
         id: "apartments_available_xml",
         label: "Download AVAILABLE Apartments XML",
         format: "xml",
-        url: "/api/feeds/apartments/full.xml?available=true",
+        url: "/feeds/apartments/full.xml?available=true",
       },
     ],
   });
