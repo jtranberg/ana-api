@@ -28,17 +28,22 @@ const WEBFLOW_TOKEN = process.env.WEBFLOW_API_TOKEN || "";
 
 /**
  * CSV header -> Webflow field slug
+ * NOTE: these keys are AFTER normalization (snake_case)
  */
 const FIELD_MAP: Record<string, string> = {
   name: "name",
   suite: "suite",
-  "photo-url": "photo-url",
-  photoUrl: "photo-url",
   photo_url: "photo-url",
+  photo: "photo-url",
+  photourl: "photo-url",
+  photo_url_full: "photo-url",
 };
 
+/** form-data can sometimes come in as string[] */
+const first = (v: any) => (Array.isArray(v) ? v[0] : v);
+
 function qBool(v: unknown) {
-  const s = String(v ?? "").toLowerCase();
+  const s = String(first(v) ?? "").toLowerCase();
   return s === "1" || s === "true" || s === "yes";
 }
 
@@ -46,21 +51,47 @@ function norm(v: unknown) {
   return String(v ?? "").trim().toLowerCase();
 }
 
+/**
+ * Normalize CSV header keys:
+ *  "Item ID" -> "item_id"
+ *  "Collection ID" -> "collection_id"
+ *  "Photo URL" -> "photo_url"
+ */
+function normKey(k: unknown) {
+  return String(k ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\?/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeRow(row: Record<string, any>) {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(row || {})) {
+    out[normKey(k)] = String(v ?? "").trim();
+  }
+  return out;
+}
+
 function csvToRows(buffer: Buffer) {
   const text = buffer.toString("utf-8");
-  const records = parse(text, {
+  const rawRecords = parse(text, {
     columns: true,
     skip_empty_lines: true,
     bom: true,
     trim: true,
-  }) as Record<string, string>[];
+  }) as Record<string, any>[];
 
+  // normalize headers + row keys
+  const records = rawRecords.map(normalizeRow);
   const headers = records.length ? Object.keys(records[0]) : [];
+
   return { headers, records };
 }
 
 /**
- * Build fieldData payload from CSV row
+ * Build fieldData payload from CSV row (normalized keys)
  */
 function buildFieldDataFromRow(row: Record<string, string>) {
   const fieldData: Record<string, any> = {};
@@ -93,7 +124,6 @@ async function fetchAllProperties(client: WebflowClient): Promise<WebflowItem[]>
     const items = Array.isArray(page?.items) ? (page.items as WebflowItem[]) : [];
     all.push(...items);
 
-    // stop when we’ve fetched everything
     const total = page.pagination?.total;
     if (typeof total === "number") {
       offset += items.length;
@@ -110,6 +140,9 @@ async function fetchAllProperties(client: WebflowClient): Promise<WebflowItem[]>
 /**
  * Resolve Webflow item id based on matchKey
  * matchKey supports: item_id | slug | name
+ *
+ * IMPORTANT:
+ * - When matchKey=item_id, we read CSV row.item_id and match Webflow item.id
  */
 function resolveItemId(
   matchKey: string,
@@ -122,7 +155,9 @@ function resolveItemId(
 
   if (mk === "item_id") {
     const id = String(row.item_id || row.id || "").trim();
-    return id || null;
+    // if it exists, ensure it matches an existing Webflow item
+    const hit = id ? byId.get(id) : undefined;
+    return hit?.id || null;
   }
 
   if (mk === "slug") {
@@ -150,12 +185,12 @@ async function handleImport(req: Request, res: Response, apply: boolean) {
   const file = (req as any).file as { buffer?: Buffer; originalname?: string } | undefined;
   if (!file?.buffer) return res.status(400).json({ error: "Missing CSV file (field name: file)" });
 
-  const matchKey = String(req.body?.matchKey || "item_id");
-  const tenantId = String(req.body?.tenantId || "demo");
-  const mode = String(req.body?.mode || "update-only");
+  // robust form-data parsing
+  const matchKey = String(first(req.body?.matchKey) || "item_id");
+  const tenantId = String(first(req.body?.tenantId) || "demo");
+  const mode = String(first(req.body?.mode) || "update-only");
   const dryRun = qBool(req.body?.dryRun ?? "true");
 
-  // Apply endpoint can still be dryRun=true
   const willWrite = apply && !dryRun;
 
   const { headers, records } = csvToRows(file.buffer);
@@ -167,7 +202,7 @@ async function handleImport(req: Request, res: Response, apply: boolean) {
   const items = await fetchAllProperties(client);
 
   // Indexes
-  const byId = new Map(items.map((x) => [String(x.id), x]));
+  const byId = new Map(items.map((x) => [String(x.id).trim(), x]));
   const bySlug = new Map(
     items
       .map((x) => [norm(x.fieldData?.slug), x] as const)
@@ -190,7 +225,10 @@ async function handleImport(req: Request, res: Response, apply: boolean) {
     try {
       const itemId = resolveItemId(matchKey, row, byId, bySlug, byName);
       if (!itemId) {
-        applied.missing.push({ row, reason: `No match for matchKey=${matchKey}` });
+        applied.missing.push({
+          row,
+          reason: `No match for matchKey=${matchKey}`,
+        });
         continue;
       }
 
@@ -207,9 +245,8 @@ async function handleImport(req: Request, res: Response, apply: boolean) {
         continue;
       }
 
-      // ✅ WRITE using PUBLIC method (no private request)
+      // ✅ WRITE
       await client.patchItem(PROPS_COLLECTION_ID, itemId, fieldData);
-
       applied.updated++;
     } catch (e: any) {
       applied.errors.push({ row, error: e?.message || String(e) });
@@ -236,10 +273,6 @@ async function handleImport(req: Request, res: Response, apply: boolean) {
  * Routes
  *  - POST /api/import/properties/csv
  *  - POST /api/import/properties/csv/apply
- *
- * IMPORTANT:
- * In server.ts you must mount this router at "/api"
- *   app.use("/api", importProxyRoutes);
  */
 router.post("/import/properties/csv", requireAdmin, upload.single("file"), async (req, res) => {
   return handleImport(req, res, false);
