@@ -58,6 +58,14 @@ function wf(): WebflowClient {
 /* =========================================================
    Schemas
 ========================================================= */
+const NullableDateSchema = z
+  .union([z.string(), z.null()])
+  .optional()
+  .transform((value) => {
+    if (value === "") return null;
+    return value;
+  });
+
 const SearchSchema = z.object({
   propertyId: z.string().optional(),
   propertyName: z.string().optional(),
@@ -72,10 +80,10 @@ const SearchSchema = z.object({
 
 const CreateSchema = z.object({
   name: z.string().min(1),
-  propertyId: z.string().min(1), // Webflow property item id (reference)
+  propertyId: z.string().min(1),
   unitNumber: z.string().optional(),
   available: z.boolean().optional(),
-  availabilityDate: z.string().optional(), // ISO string
+  availabilityDate: NullableDateSchema,
   rent: z.number().optional(),
   bedrooms: z.number().optional(),
   bathrooms: z.number().optional(),
@@ -86,7 +94,7 @@ const PatchSchema = z.object({
   propertyId: z.string().optional(),
   unitNumber: z.string().optional(),
   available: z.boolean().optional(),
-  availabilityDate: z.string().optional(),
+  availabilityDate: NullableDateSchema,
   rent: z.number().optional(),
   bedrooms: z.number().optional(),
   bathrooms: z.number().optional(),
@@ -97,7 +105,7 @@ const UpsertSchema = z.object({
   unitNumber: z.string().optional(),
   name: z.string().min(1),
   available: z.boolean().optional(),
-  availabilityDate: z.string().optional(),
+  availabilityDate: NullableDateSchema,
   rent: z.number().optional(),
   bedrooms: z.number().optional(),
   bathrooms: z.number().optional(),
@@ -111,7 +119,7 @@ function buildFieldData(input: {
   propertyId: string;
   unitNumber?: string;
   available?: boolean;
-  availabilityDate?: string;
+  availabilityDate?: string | null;
   rent?: number;
   bedrooms?: number;
   bathrooms?: number;
@@ -130,7 +138,6 @@ function buildFieldData(input: {
 
 /* =========================================================
    Routes
-   Mount at: app.use("/api/webflow", webflowUnitsRouter)
 ========================================================= */
 
 // GET /api/webflow/units/search
@@ -147,10 +154,7 @@ webflowUnitsRouter.get("/units/search", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /api/webflow/units
- * Creates a unit in Webflow (admin only)
- */
+// POST /api/webflow/units
 webflowUnitsRouter.post("/units", requireAdmin, async (req: Request, res: Response) => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -167,10 +171,7 @@ webflowUnitsRouter.post("/units", requireAdmin, async (req: Request, res: Respon
   }
 });
 
-/**
- * PATCH /api/webflow/units/:id
- * Updates an existing unit item (admin only)
- */
+// PATCH /api/webflow/units/:id
 webflowUnitsRouter.patch("/units/:id", requireAdmin, async (req: Request, res: Response) => {
   const parsed = PatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -182,13 +183,17 @@ webflowUnitsRouter.patch("/units/:id", requireAdmin, async (req: Request, res: R
     if (parsed.data.propertyId !== undefined) fieldData["property-2"] = parsed.data.propertyId;
     if (parsed.data.unitNumber !== undefined) fieldData["unit-number"] = parsed.data.unitNumber;
     if (parsed.data.available !== undefined) fieldData.available = parsed.data.available;
-    if (parsed.data.availabilityDate !== undefined)
+    if (parsed.data.availabilityDate !== undefined) {
       fieldData["availability-date"] = parsed.data.availabilityDate;
+    }
     if (parsed.data.rent !== undefined) fieldData.rent = parsed.data.rent;
     if (parsed.data.bedrooms !== undefined) fieldData.bedrooms = parsed.data.bedrooms;
     if (parsed.data.bathrooms !== undefined) fieldData.bathrooms = parsed.data.bathrooms;
 
-    const updated = await wf().updateItem(getUnitsCollectionId(), String(req.params.id), { fieldData });
+    const updated = await wf().updateItem(getUnitsCollectionId(), String(req.params.id), {
+      fieldData,
+    });
+
     return res.json({ unit: updated });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -196,10 +201,7 @@ webflowUnitsRouter.patch("/units/:id", requireAdmin, async (req: Request, res: R
   }
 });
 
-/**
- * POST /api/webflow/units/upsert
- * Finds a unit by (propertyId + unitNumber) and updates if found; else creates. (admin only)
- */
+// POST /api/webflow/units/upsert
 webflowUnitsRouter.post("/units/upsert", requireAdmin, async (req: Request, res: Response) => {
   const parsed = UpsertSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
