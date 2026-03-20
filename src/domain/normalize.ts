@@ -217,6 +217,8 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     includeArchived: true,
   });
 
+  console.log("RAW UNIT SAMPLE", unitsRaw[0]?.fieldData);
+
   const properties: Property[] = propertiesRaw.map((p) => {
     const d = fd(p);
 
@@ -319,6 +321,15 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
     // Skip units that do not have a real rent yet
     if (rentVal == null || rentVal <= 0) {
+      console.log("SKIPPING UNIT FOR MISSING RENT", {
+        unitId: u.id,
+        unitNumber: d[FIELDS.unit.unitNumber],
+        rentFieldSlug: FIELDS.unit.rent,
+        rentFieldValue: d[FIELDS.unit.rent],
+        rentRaw: d["rent"],
+        priceRaw: d["price"],
+        allKeys: Object.keys(d),
+      });
       continue;
     }
 
@@ -373,6 +384,13 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
   const cleanedUnits = units.filter(
     (u) => u.propertyId && propertyById.has(u.propertyId) && u.floorplanId
   );
+
+  console.log("CANONICAL COUNTS", {
+    properties: properties.length,
+    floorplans: floorplans.length,
+    unitsBeforeClean: units.length,
+    cleanedUnits: cleanedUnits.length,
+  });
 
   return { properties, floorplans, units: cleanedUnits };
 }
