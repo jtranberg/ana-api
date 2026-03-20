@@ -192,7 +192,9 @@ function extractImageUrlsFromRichText(html: string): string[] {
     urls.add(m[1]);
   }
 
-  for (const m of s.matchAll(/(https?:\/\/[^\s"'<>]+?\.(?:jpg|jpeg|png|webp|gif))(?:[?#[^\s"'<>]]*)?/gi)) {
+  for (const m of s.matchAll(
+    /(https?:\/\/[^\s"'<>]+?\.(?:jpg|jpeg|png|webp|gif))(?:[?#[^\s"'<>]]*)?/gi
+  )) {
     urls.add(m[1]);
   }
 
@@ -258,11 +260,23 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       parsedAddr.city
     );
 
-    const postal = firstNonEmpty(
+    const rawRegion = firstNonEmpty(
+      pickTextField(d, ["region", "province", "state", "province-state"]),
+      parsedAddr.region
+    );
+
+    const region =
+      ["Vancouver", "North Vancouver", "West Vancouver", "Richmond"].includes(city)
+        ? "BC"
+        : rawRegion || "BC";
+
+    const rawPostal = firstNonEmpty(
       pickTextField(d, [FIELDS.property.postal]),
-      pickTextField(d, ["postal", "zip", "zip-code", "postal-code"]),
+      pickTextField(d, ["postal", "zip", "zip-code", "postal-code", "postcode"]),
       parsedAddr.postal
     );
+
+    const postal = rawPostal || "V0V 0V0";
 
     return {
       propertyId: p.id,
@@ -277,8 +291,8 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       address2: pickTextField(d, [FIELDS.property.address2]) || undefined,
 
       city: city || "",
-      region: parsedAddr.region || "BC",
-      postal: postal || "",
+      region,
+      postal,
       country: "CA",
 
       lat: asNumber(d[FIELDS.property.lat]),
