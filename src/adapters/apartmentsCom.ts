@@ -27,7 +27,32 @@ export function buildApartmentsFullFeed(data: CanonicalData): ApartmentsFeedBuil
 
     if (!v.isPublishable) {
       blockedCount++;
-      if (blockedSample.length < 25) blockedSample.push({ unitId: unit.unitId, reasons: v.blockedReasons });
+      if (blockedSample.length < 25) {
+        blockedSample.push({ unitId: unit.unitId, reasons: v.blockedReasons });
+      }
+
+      console.log("BLOCKED UNIT", {
+        unitId: unit.unitId,
+        reasons: v.blockedReasons,
+        propertyId: unit.propertyId,
+        floorplanId: unit.floorplanId,
+        propertyName: property?.name,
+        address1: property?.address1,
+        city: property?.city,
+        region: property?.region,
+        postal: property?.postal,
+        country: property?.country,
+        rent: unit.rent,
+        beds: floorplan?.beds,
+        baths: floorplan?.baths,
+        imageCount:
+          (unit.images?.length || 0) +
+          (floorplan?.images?.length || 0) +
+          (property?.images?.length || 0),
+        available: unit.available,
+        availableDate: unit.availableDate,
+      });
+
       continue;
     }
 
@@ -51,7 +76,6 @@ export function buildApartmentsFullFeed(data: CanonicalData): ApartmentsFeedBuil
     listing.ele("Available").txt(unit.available ? "true" : "false").up();
     if (unit.availableDate) listing.ele("AvailableDate").txt(unit.availableDate).up();
 
-    // Images (unit first, then floorplan, then property)
     const imgs = [
       ...(unit.images || []),
       ...(floorplan!.images || []),
@@ -59,12 +83,20 @@ export function buildApartmentsFullFeed(data: CanonicalData): ApartmentsFeedBuil
     ].slice(0, 20);
 
     const imagesNode = listing.ele("Images");
-    for (const url of imgs) imagesNode.ele("Image").txt(url).up();
+    for (const url of imgs) {
+      imagesNode.ele("Image").txt(url).up();
+    }
 
     listing.ele("LastUpdated").txt(unit.lastUpdated).up();
 
     listing.up();
   }
+
+  console.log("FEED BUILD COUNTS", {
+    recordCount,
+    blockedCount,
+    blockedSample,
+  });
 
   return {
     xml: xmlToString(root),
