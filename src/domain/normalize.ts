@@ -10,43 +10,31 @@ import { WebflowClient } from "../webflow/client.js";
 const FIELDS = {
   // Properties collection fields (v2 slugs)
   property: {
-    // Rich text / text
-    nameRT: "property-name-rt", // e.g. "<p>Peter Wall Yorkshire</p>"
-    name: "property-name", // marketing line (often rich text)
+    nameRT: "property-name-rt",
+    name: "property-name",
     subtext: "subtext",
     information: "information",
     description: "description",
     awards: "awards",
 
-    // City name appears to be stored in text-block-1 (e.g. "<p>Vancouver</p>")
     cityName: "text-block-1",
-
-    // City option id also exists (optional; map later if you want)
     cityOptionId: "city",
 
-    /**
-     * ✅ Address fields (ADD THESE IN WEBFLOW CMS ASAP)
-     * These are best-guess slugs. We also do fallback lookups below.
-     */
     address1: "address-1",
     address2: "address-2",
     postal: "postal-code",
 
-    // Images
     mainImage: "main-property-image",
     support1: "property-support-image-1",
     support2: "property-support-image-2",
     support3: "property-support-image-3",
 
-    // Lat/Lng are strings in your CMS
     lat: "latitude-2",
     lng: "longitude-2",
 
-    // Misc
     rentalOrPurchase: "rental-or-purchase",
     unitsAvailableCount: "units-available-count",
 
-    // Amenities are references/ids (optional)
     amenity1: "amenity-1",
     amenity2: "amenity-2",
     amenity3: "amenity-3",
@@ -57,25 +45,16 @@ const FIELDS = {
 
   // Units collection fields (v2 slugs)
   unit: {
-    // ✅ confirmed from your /units-sample debug
     propertyRef: "property-2",
     unitNumber: "unit-number",
     available: "available",
     unitType: "unit-type",
     sqft: "square-footage",
 
-    // ⚠️ not seen in your sample yet (confirm later)
     availableDate: "availability-date",
-    rent: "rent-price",
-    beds: "beds",
-    baths: "baths",
-
-    /**
-     * OPTIONAL (if you later add):
-     * unitMainImage: "unit-main-image",
-     * unitSupport1: "unit-support-image-1",
-     * etc...
-     */
+    rent: "rent",
+    beds: "bedrooms",
+    baths: "bathrooms",
   },
 };
 
@@ -109,13 +88,6 @@ function asBool(v: unknown): boolean | undefined {
   return undefined;
 }
 
-/**
- * Webflow reference fields (v2) commonly come back as:
- * - string id
- * - array of string ids
- * - object with id
- * - array of objects with id
- */
 function extractRefId(value: any): string | undefined {
   if (!value) return undefined;
   if (typeof value === "string") return value;
@@ -128,12 +100,6 @@ function extractRefId(value: any): string | undefined {
   return undefined;
 }
 
-/**
- * Webflow assets may come back as:
- * - { url: "https://..." }
- * - "https://..."
- * - sometimes arrays of either (rare)
- */
 function extractImageUrl(v: any): string | undefined {
   if (!v) return undefined;
   if (typeof v === "string") return v.startsWith("http") ? v : undefined;
@@ -184,12 +150,7 @@ function uniqStrings(arr: string[]): string[] {
 
 /**
  * TEMP PATCH (REMOVE AFTER WEBFLOW CMS UPDATE)
- * Extract Address fields from HTML-ish "description" rich text:
- * Example: "<p><strong>Address:</strong> 2336 York Ave, Vancouver, BC</p>..."
- *
- * ✅ After CMS update:
- * - add explicit fields: address1, city, region, postal
- * - then delete this helper and map directly from fieldData
+ * Extract Address fields from rich text more safely.
  */
 function extractAddressPartsFromDescription(descriptionHtml: string): {
   address1?: string;
@@ -199,37 +160,38 @@ function extractAddressPartsFromDescription(descriptionHtml: string): {
 } {
   const clean = stripHtml(descriptionHtml);
 
-  // Try to find a chunk starting with "Address:"
-  const m = clean.match(/Address:\s*([^\n\r]+)/i);
+  const m = clean.match(/Address:\s*([^|]+?)(?:Postal Code:|$)/i);
   if (!m) return {};
 
-  const full = m[1].trim(); // "2336 York Ave, Vancouver, BC"
+  const full = m[1].trim();
   const parts = full.split(",").map((p) => p.trim()).filter(Boolean);
 
   const address1 = parts[0];
   const city = parts[1];
 
-  //postal code 
-  const region = parts[2] || "BC";
+  let region: string | undefined;
+  let postal: string | undefined;
 
-  return { address1, city, region };
+  const tail = parts.slice(2).join(" ");
+
+  const regionMatch = tail.match(/\b(BC|AB|SK|MB|ON|QC|NB|NS|PE|NL|YT|NT|NU)\b/i);
+  if (regionMatch) region = regionMatch[1].toUpperCase();
+
+  const postalMatch = tail.match(/\b([A-Z]\d[A-Z][ -]?\d[A-Z]\d)\b/i);
+  if (postalMatch) postal = postalMatch[1].toUpperCase();
+
+  return { address1, city, region, postal };
 }
 
-/**
- * TEMP PATCH
- * If your property images are embedded in rich text, pull URLs out.
- * This helps unblock the "min 3 images" requirement immediately.
- */
 function extractImageUrlsFromRichText(html: string): string[] {
   const s = asString(html);
   if (!s) return [];
   const urls = new Set<string>();
 
-  // src="https://..."
   for (const m of s.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)) {
     urls.add(m[1]);
   }
-  // plain https://....(jpg/png/webp/etc)
+
   for (const m of s.matchAll(/(https?:\/\/[^\s"'<>]+?\.(?:jpg|jpeg|png|webp|gif))(?:[?#[^\s"'<>]]*)?/gi)) {
     urls.add(m[1]);
   }
@@ -249,27 +211,18 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
   const client = new WebflowClient(token);
 
-  // ✅ Properties: normal (live-only)
   const propertiesRaw = await client.fetchAllItems(propertiesCollectionId);
-
-  /**
-   * TEMP DEBUG (REMOVE AFTER CONFIRMED)
-   * Pull EVERYTHING (draft + archived) so we can confirm units exist.
-   * ✅ After CMS is stable, switch back to live-only fetch (no includeDrafts/includeArchived).
-   */
   const unitsRaw = await client.fetchAllItems(unitsCollectionId, {
     includeDrafts: true,
     includeArchived: true,
   });
 
-  // ---- Properties ----
   const properties: Property[] = propertiesRaw.map((p) => {
     const d = fd(p);
 
     const descriptionHtml = asString(d[FIELDS.property.description]);
     const parsedAddr = extractAddressPartsFromDescription(descriptionHtml);
 
-    // ✅ Images: known slugs + extra fallbacks + rich text scraping
     const images = uniqStrings(
       [
         extractImageUrl(d[FIELDS.property.mainImage]),
@@ -277,7 +230,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
         extractImageUrl(d[FIELDS.property.support2]),
         extractImageUrl(d[FIELDS.property.support3]),
 
-        // TEMP FALLBACKS (remove once Webflow slugs are confirmed)
         extractImageUrl(d["main-image"]),
         extractImageUrl(d["featured-image"]),
         extractImageUrl(d["thumbnail-image"]),
@@ -288,7 +240,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       ].filter(Boolean) as string[]
     );
 
-    // ✅ Address / City / Postal: prefer explicit fields, then fallbacks, then parsed-from-description
     const address1 = firstNonEmpty(
       pickTextField(d, [FIELDS.property.address1]),
       pickTextField(d, ["street-address", "address1", "address", "street"]),
@@ -310,32 +261,18 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     return {
       propertyId: p.id,
 
-      // Use property-name-rt first (clean), then fieldData.name, then marketing line
       name:
         stripHtml(asString(d[FIELDS.property.nameRT])) ||
         stripHtml(asString(d["name"])) ||
         stripHtml(asString(d[FIELDS.property.name])) ||
         "",
 
-      /**
-       * ✅ REQUIRED FIELDS FOR FEED VALIDATOR
-       * TEMP: if Webflow is missing them, we fallback to description parsing or blank.
-       *
-       * After CMS update:
-       * - remove parsedAddr helper
-       * - map directly from explicit CMS fields only
-       */
       address1: address1 || "",
       address2: pickTextField(d, [FIELDS.property.address2]) || undefined,
 
       city: city || "",
-
-      // Keep BC here as province/state for address fields.
-      // (Your "Region" in the XML should NOT be used for marketing text.)
       region: parsedAddr.region || "BC",
-
-      // TEMP: if still empty, use placeholder until CMS adds it
-      postal: postal || "V0V 0V0",
+      postal: postal || "",
       country: "CA",
 
       lat: asNumber(d[FIELDS.property.lat]),
@@ -347,7 +284,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
       description: stripHtml(descriptionHtml) || undefined,
 
-      // These are currently IDs; later you can deref them via a "Building details" collection
       amenities: [
         asString(d[FIELDS.property.amenity1]),
         asString(d[FIELDS.property.amenity2]),
@@ -363,7 +299,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
   const propertyById = new Map(properties.map((x) => [x.propertyId, x]));
 
-  // ---- Synthetic Floorplans (generated from units) ----
   const floorplans: Floorplan[] = [];
   const floorplanKeyToId = new Map<string, string>();
   const units: Unit[] = [];
@@ -373,24 +308,22 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
     const propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
 
-    /**
-     * TEMP PATCH (REMOVE AFTER WEBFLOW CMS UPDATE)
-     * rent is missing from Webflow units right now, causing ALL listings to be blocked.
-     *
-     * ✅ After CMS update:
-     * - add a real numeric rent field in Units
-     * - remove the fallback-to-1
-     */
-    let rent = asNumber(d[FIELDS.unit.rent]);
-    if (!rent || rent <= 0) rent = 1;
+    const rentVal =
+      asNumber(d[FIELDS.unit.rent]) ??
+      asNumber(d["rent"]) ??
+      asNumber(d["price"]);
 
     const beds = asNumber(d[FIELDS.unit.beds]);
     const baths = asNumber(d[FIELDS.unit.baths]);
     const sqft = asNumber(d[FIELDS.unit.sqft]);
 
+    // Skip units that do not have a real rent yet
+    if (rentVal == null || rentVal <= 0) {
+      continue;
+    }
+
     const unitType = asString(d[FIELDS.unit.unitType] ?? "Unit");
 
-    // synthetic floorplan key
     const fpKey = `${propertyId}|${unitType}|${beds ?? "?"}|${baths ?? "?"}|${sqft ?? "?"}`;
 
     let floorplanId = floorplanKeyToId.get(fpKey);
@@ -398,7 +331,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       floorplanId = `fp_${floorplanKeyToId.size + 1}`;
       floorplanKeyToId.set(fpKey, floorplanId);
 
-      // TEMP: if you don’t have floorplan images, inherit property images (helps unblock min image rules)
       const inheritedImages = propertyById.get(propertyId)?.images;
       floorplans.push({
         floorplanId,
@@ -408,7 +340,10 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
         baths: baths ?? 0,
         sqftMin: sqft,
         sqftMax: sqft,
-        images: inheritedImages && inheritedImages.length ? inheritedImages : undefined,
+        images:
+          inheritedImages && inheritedImages.length
+            ? uniqStrings(inheritedImages).slice(0, 8)
+            : undefined,
       });
     }
 
@@ -416,7 +351,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const availableDate = toIsoDateOnly(d[FIELDS.unit.availableDate]);
     const updated = u.lastUpdated ? new Date(u.lastUpdated).toISOString() : isoNow();
 
-    // TEMP: inherit property images onto units if unit images aren’t mapped yet
     const inheritedUnitImages = propertyById.get(propertyId)?.images;
 
     units.push({
@@ -424,17 +358,21 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       propertyId,
       floorplanId,
       unitNumber: asString(d[FIELDS.unit.unitNumber]) || undefined,
-      rent,
+      rent: rentVal,
       rentMax: undefined,
       available,
       availableDate,
-      images: inheritedUnitImages && inheritedUnitImages.length ? inheritedUnitImages : undefined,
+      images:
+        inheritedUnitImages && inheritedUnitImages.length
+          ? uniqStrings(inheritedUnitImages).slice(0, 8)
+          : undefined,
       lastUpdated: updated,
     });
   }
 
-  // keep only units that reference a known property
-  const cleanedUnits = units.filter((u) => u.propertyId && propertyById.has(u.propertyId) && u.floorplanId);
+  const cleanedUnits = units.filter(
+    (u) => u.propertyId && propertyById.has(u.propertyId) && u.floorplanId
+  );
 
   return { properties, floorplans, units: cleanedUnits };
 }
