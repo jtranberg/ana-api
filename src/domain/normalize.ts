@@ -327,12 +327,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const d = fd(u);
 
     const propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
-    const available = asBool(d[FIELDS.unit.available]);
-
-    // Only process available units for now
-    if (!available) {
-      continue;
-    }
+    const available = asBool(d[FIELDS.unit.available]) ?? false;
 
     const rentVal =
       asNumber(d[FIELDS.unit.rent]) ??
@@ -344,7 +339,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const sqft = asNumber(d[FIELDS.unit.sqft]);
 
     if (rentVal == null || rentVal <= 0) {
-      console.log("SKIPPING AVAILABLE UNIT FOR MISSING RENT", {
+      console.log("SKIPPING UNIT FOR MISSING RENT", {
         unitId: u.id,
         unitNumber: d[FIELDS.unit.unitNumber],
         propertyId,
@@ -357,7 +352,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       continue;
     }
 
-    console.log("AVAILABLE UNIT WITH RENT", {
+    console.log("UNIT WITH RENT", {
       unitId: u.id,
       unitNumber: d[FIELDS.unit.unitNumber],
       propertyId,
@@ -365,7 +360,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       beds,
       baths,
       sqft,
-      available: d[FIELDS.unit.available],
+      available,
     });
 
     const unitType = asString(d[FIELDS.unit.unitType] ?? "Unit");
@@ -405,7 +400,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       unitNumber: asString(d[FIELDS.unit.unitNumber]) || undefined,
       rent: rentVal,
       rentMax: undefined,
-      available: true,
+      available,
       availableDate,
       images:
         inheritedUnitImages && inheritedUnitImages.length
