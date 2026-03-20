@@ -211,10 +211,10 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
   const client = new WebflowClient(token);
 
- const propertiesRaw = await client.fetchAllItems(propertiesCollectionId, {
-  includeDrafts: true,
-  includeArchived: true,
-});
+  const propertiesRaw = await client.fetchAllItems(propertiesCollectionId, {
+    includeDrafts: true,
+    includeArchived: true,
+  });
 
   const unitsRaw = await client.fetchAllItems(unitsCollectionId, {
     includeDrafts: true,
@@ -313,6 +313,12 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const d = fd(u);
 
     const propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
+    const available = asBool(d[FIELDS.unit.available]);
+
+    // Only process available units for now
+    if (!available) {
+      continue;
+    }
 
     const rentVal =
       asNumber(d[FIELDS.unit.rent]) ??
@@ -324,9 +330,10 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const sqft = asNumber(d[FIELDS.unit.sqft]);
 
     if (rentVal == null || rentVal <= 0) {
-      console.log("SKIPPING UNIT FOR MISSING RENT", {
+      console.log("SKIPPING AVAILABLE UNIT FOR MISSING RENT", {
         unitId: u.id,
         unitNumber: d[FIELDS.unit.unitNumber],
+        propertyId,
         rentFieldSlug: FIELDS.unit.rent,
         rentFieldValue: d[FIELDS.unit.rent],
         rentRaw: d["rent"],
@@ -336,7 +343,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       continue;
     }
 
-    console.log("UNIT WITH RENT", {
+    console.log("AVAILABLE UNIT WITH RENT", {
       unitId: u.id,
       unitNumber: d[FIELDS.unit.unitNumber],
       propertyId,
@@ -372,7 +379,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       });
     }
 
-    const available = asBool(d[FIELDS.unit.available]) ?? false;
     const availableDate = toIsoDateOnly(d[FIELDS.unit.availableDate]);
     const updated = u.lastUpdated ? new Date(u.lastUpdated).toISOString() : isoNow();
 
@@ -385,7 +391,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       unitNumber: asString(d[FIELDS.unit.unitNumber]) || undefined,
       rent: rentVal,
       rentMax: undefined,
-      available,
+      available: true,
       availableDate,
       images:
         inheritedUnitImages && inheritedUnitImages.length
