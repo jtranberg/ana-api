@@ -211,7 +211,11 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
   const client = new WebflowClient(token);
 
-  const propertiesRaw = await client.fetchAllItems(propertiesCollectionId);
+ const propertiesRaw = await client.fetchAllItems(propertiesCollectionId, {
+  includeDrafts: true,
+  includeArchived: true,
+});
+
   const unitsRaw = await client.fetchAllItems(unitsCollectionId, {
     includeDrafts: true,
     includeArchived: true,
