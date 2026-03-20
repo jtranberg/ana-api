@@ -6,6 +6,7 @@
 // - Runs API returns BOTH Full + Available exports
 // - XML endpoints support ?available=true and (optionally) ?download=1 for filename
 // - Feed endpoints remain protected with FEED_TOKEN (header OR ?token=...)
+// - Apartments.com XML endpoint now supports Basic Auth for external feed access
 // - Dashboard XML endpoint is "dashboard-safe" (no FEED_TOKEN) but can be locked with DASHBOARD_TOKEN if you want
 
 import express from "express";
@@ -13,16 +14,13 @@ import type { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 
-import { apartmentsFullFeed } from "./routes/feeds.js";
 import { generateApartmentsFeedJob } from "./jobs/generateApartmentsFeedJob.js";
 import { getCanonicalFromWebflow } from "./domain/normalize.js";
 import { WebflowClient } from "./webflow/client.js";
 import { generateApartmentsFull } from "./feeds/generateFeed.js";
 
 import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
-
 import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter.js";
-
 import importRoutes from "./routes/import.routes.js";
 // import importProxyRoutes from "./routes/importProxy.routes.js";
 
@@ -38,8 +36,10 @@ process.on("uncaughtException", (err) => console.error("🔥 uncaughtException:"
    Config
 ========================================================= */
 const PORT = Number(process.env.PORT || 3000);
-const FEED_TOKEN = process.env.FEED_TOKEN || ""; // used for /feeds + /jobs + /debug (and optionally dashboard)
-const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || ""; // optional: if set, require for /api/feeds/*
+const FEED_TOKEN = process.env.FEED_TOKEN || "";
+const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || "";
+const FEED_BASIC_USER = process.env.FEED_BASIC_USER || "";
+const FEED_BASIC_PASS = process.env.FEED_BASIC_PASS || "";
 
 const allowedOrigins = new Set([
   "http://localhost:5173",
@@ -58,24 +58,28 @@ const isNetlifyPreview = (origin: string) => /^https:\/\/.*\.netlify\.app$/.test
 ========================================================= */
 const app = express();
 
-// Basic request id (helps when scanning logs)
 app.use((req, _res, next) => {
   (req as any).rid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   next();
 });
 
-// CORS (dashboard + dev)
 app.use(
   cors({
     origin: (origin, cb) => {
-      // allow curl/postman/no-origin calls
       if (!origin) return cb(null, true);
       if (allowedOrigins.has(origin)) return cb(null, true);
       if (isNetlifyPreview(origin)) return cb(null, true);
       return cb(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "x-admin-key", "x-feed-token", "x-dashboard-token"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "x-admin-key",
+      "x-feed-token",
+      "x-dashboard-token",
+    ],
     credentials: false,
     maxAge: 86400,
   })
@@ -84,13 +88,10 @@ app.options(/.*/, cors());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
-// Dashboard/API routes (optionally lock with DASHBOARD_TOKEN)
-
 
 app.use("/api/webflow", webflowPropertiesRoutes);
 app.use("/api/webflow", webflowUnitsRouter);
 app.use("/api", importRoutes);
-
 
 // app.use("/api", importProxyRoutes);
 
@@ -111,11 +112,48 @@ function requireFeedToken(req: Request, res: Response, next: NextFunction) {
   const token = headerToken || queryToken;
 
   if (!FEED_TOKEN) return res.status(500).json({ error: "FEED_TOKEN not set" });
-  if (typeof token !== "string" || token !== FEED_TOKEN) return res.status(401).json({ error: "Unauthorized" });
+  if (typeof token !== "string" || token !== FEED_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
   return next();
 }
 
-// Optional: lock dashboard downloads if you want
+function requireBasicFeedAuth(req: Request, res: Response, next: NextFunction) {
+  if (!FEED_BASIC_USER || !FEED_BASIC_PASS) {
+    return res.status(500).json({ error: "Basic feed auth not configured" });
+  }
+
+  const auth = req.header("authorization");
+
+  if (!auth || !auth.startsWith("Basic ")) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Apartments Feed"');
+    return res.status(401).send("Authentication required");
+  }
+
+  const encoded = auth.slice("Basic ".length).trim();
+  let decoded = "";
+
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8");
+  } catch {
+    return res.status(401).send("Invalid authorization header");
+  }
+
+  const separatorIndex = decoded.indexOf(":");
+  if (separatorIndex === -1) {
+    return res.status(401).send("Invalid authorization format");
+  }
+
+  const incomingUser = decoded.slice(0, separatorIndex);
+  const incomingPass = decoded.slice(separatorIndex + 1);
+
+  if (incomingUser !== FEED_BASIC_USER || incomingPass !== FEED_BASIC_PASS) {
+    return res.status(401).send("Unauthorized");
+  }
+
+  return next();
+}
+
 function requireDashboardTokenIfConfigured(req: Request, res: Response, next: NextFunction) {
   if (!DASHBOARD_TOKEN) return next();
 
@@ -131,13 +169,11 @@ function requireDashboardTokenIfConfigured(req: Request, res: Response, next: Ne
   return next();
 }
 
-// normalize bool query
 function qBool(v: unknown) {
   const s = String(v ?? "").toLowerCase();
   return s === "1" || s === "true" || s === "yes";
 }
 
-// "Available only" filter (adjust keys if your canonical differs)
 function filterCanonicalAvailableOnly<T extends { units: any[] }>(data: T) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -148,7 +184,6 @@ function filterCanonicalAvailableOnly<T extends { units: any[] }>(data: T) {
       const available = Boolean(u?.available);
       if (!available) return false;
 
-      // optional date logic
       const dRaw = u?.availableDate;
       if (!dRaw) return true;
 
@@ -206,15 +241,19 @@ app.get("/api/runs/:id", (req, res) => {
     exports: [
       {
         id: "apartments_full_xml",
-        label: "Download FULL Apartments XML",
+        label: "Apartments.com Full Feed",
         format: "xml",
-        url: `/feeds/apartments/full.xml?token=${FEED_TOKEN}`
+        auth: "basic",
+        endpoint: `/feeds/apartments/full.xml`,
+        url: `/feeds/apartments/full.xml`,
       },
       {
         id: "apartments_available_xml",
-        label: "Download AVAILABLE Apartments XML",
+        label: "Apartments.com Available Feed",
         format: "xml",
-        url: `/feeds/apartments/full.xml?available=true&token=${FEED_TOKEN}`
+        auth: "basic",
+        endpoint: `/feeds/apartments/full.xml?available=true`,
+        url: `/feeds/apartments/full.xml?available=true`,
       },
     ],
   });
@@ -234,7 +273,6 @@ app.post(
     runs.push(run);
 
     try {
-      // Dashboard trigger: no FEED_TOKEN needed
       const result = await generateApartmentsFeedJob();
       run.status = "succeeded";
       return res.json({ ok: true, runId: run._id, result });
@@ -248,13 +286,11 @@ app.post(
 );
 
 /* =========================================================
-   Dashboard-safe XML download (no FEED_TOKEN)
-   - Optional lock via DASHBOARD_TOKEN (header x-dashboard-token OR ?dt=)
-   - Supports ?available=true
+   Apartments.com XML endpoint
 ========================================================= */
 app.get(
   "/feeds/apartments/full.xml",
-  requireFeedToken,
+  requireBasicFeedAuth,
   asyncHandler(async (req, res) => {
     const onlyAvailable = qBool(req.query.available);
 
@@ -266,8 +302,10 @@ app.get(
 
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
 
-    const filename = onlyAvailable ? "apartments_available.xml" : "apartments_full.xml";
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    if (qBool(req.query.download)) {
+      const filename = onlyAvailable ? "apartments_available.xml" : "apartments_full.xml";
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    }
 
     return res.status(200).send(xml);
   })
@@ -275,11 +313,7 @@ app.get(
 
 /* =========================================================
    Feed + Job endpoints (protected with FEED_TOKEN)
-   These are the endpoints you typically hand to Apartments.com.
-   If they can only fetch URLs (no custom headers), use ?token=...
 ========================================================= */
-
-
 app.get(
   "/jobs/generate-apartments",
   requireFeedToken,
@@ -292,18 +326,16 @@ app.get(
 /* =========================================================
    Debug endpoints (protected)
 ========================================================= */
-app.get(
-  "/debug/env",
-  requireFeedToken,
-  (_req, res) => {
-    const mask = (v?: string) => (v ? v.slice(0, 6) + "…" + v.slice(-6) : null);
-    res.json({
-      WEBFLOW_COLLECTION_UNITS: mask(process.env.WEBFLOW_COLLECTION_UNITS),
-      WEBFLOW_COLLECTION_PROPERTIES: mask(process.env.WEBFLOW_COLLECTION_PROPERTIES),
-      WEBFLOW_API_TOKEN: process.env.WEBFLOW_API_TOKEN ? "set" : "missing",
-    });
-  }
-);
+app.get("/debug/env", requireFeedToken, (_req, res) => {
+  const mask = (v?: string) => (v ? v.slice(0, 6) + "…" + v.slice(-6) : null);
+  res.json({
+    WEBFLOW_COLLECTION_UNITS: mask(process.env.WEBFLOW_COLLECTION_UNITS),
+    WEBFLOW_COLLECTION_PROPERTIES: mask(process.env.WEBFLOW_COLLECTION_PROPERTIES),
+    WEBFLOW_API_TOKEN: process.env.WEBFLOW_API_TOKEN ? "set" : "missing",
+    FEED_BASIC_USER: FEED_BASIC_USER ? "set" : "missing",
+    FEED_BASIC_PASS: FEED_BASIC_PASS ? "set" : "missing",
+  });
+});
 
 app.get(
   "/debug/webflow",
@@ -336,7 +368,6 @@ app.get(
   })
 );
 
-// Units sample
 app.get(
   "/debug/webflow/units-sample",
   requireFeedToken,
@@ -358,7 +389,6 @@ app.get(
   })
 );
 
-// Properties sample
 app.get(
   "/debug/webflow/properties-sample",
   requireFeedToken,
@@ -380,7 +410,6 @@ app.get(
   })
 );
 
-// Property by id (temporary: searches first 100)
 app.get(
   "/debug/webflow/property-by-id",
   requireFeedToken,
