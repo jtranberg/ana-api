@@ -29,7 +29,8 @@ export function validateUnit(
     if (!property.address1) reasons.push("Missing address1");
     if (!property.city) reasons.push("Missing city");
     if (!property.region) reasons.push("Missing region");
-    if (!property.postal) reasons.push("Missing postal/zip");
+    // TEMP: allow missing postal/zip while CMS is being completed
+    // if (!property.postal) reasons.push("Missing postal/zip");
     if (!property.country) reasons.push("Missing country");
   }
 
