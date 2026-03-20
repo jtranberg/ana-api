@@ -76,27 +76,29 @@ export function buildApartmentsFullFeed(data: CanonicalData): ApartmentsFeedBuil
     listing.ele("Available").txt(unit.available ? "true" : "false").up();
     if (unit.availableDate) listing.ele("AvailableDate").txt(unit.availableDate).up();
 
-    const imgs = [
-      ...(unit.images || []),
-      ...(floorplan!.images || []),
-      ...(property!.images || []),
-    ].slice(0, 20);
+const imgs = Array.from(
+  new Set([
+    ...(unit.images || []),
+    ...(floorplan!.images || []),
+    ...(property!.images || []),
+  ])
+).slice(0, 20);
 
-    const imagesNode = listing.ele("Images");
-    for (const url of imgs) {
-      imagesNode.ele("Image").txt(url).up();
-    }
+const imagesNode = listing.ele("Images");
+for (const url of imgs) {
+  imagesNode.ele("Image").txt(url).up();
+}
 
-    listing.ele("LastUpdated").txt(unit.lastUpdated).up();
+listing.ele("LastUpdated").txt(unit.lastUpdated).up();
 
-    listing.up();
-  }
+listing.up();
+}
 
-  console.log("FEED BUILD COUNTS", {
-    recordCount,
-    blockedCount,
-    blockedSample,
-  });
+console.log("FEED BUILD COUNTS", {
+  recordCount,
+  blockedCount,
+  blockedSample,
+});
 
   return {
     xml: xmlToString(root),
