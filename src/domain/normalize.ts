@@ -319,7 +319,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const baths = asNumber(d[FIELDS.unit.baths]);
     const sqft = asNumber(d[FIELDS.unit.sqft]);
 
-    // Skip units that do not have a real rent yet
     if (rentVal == null || rentVal <= 0) {
       console.log("SKIPPING UNIT FOR MISSING RENT", {
         unitId: u.id,
@@ -332,6 +331,17 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       });
       continue;
     }
+
+    console.log("UNIT WITH RENT", {
+      unitId: u.id,
+      unitNumber: d[FIELDS.unit.unitNumber],
+      propertyId,
+      rentVal,
+      beds,
+      baths,
+      sqft,
+      available: d[FIELDS.unit.available],
+    });
 
     const unitType = asString(d[FIELDS.unit.unitType] ?? "Unit");
 
@@ -391,6 +401,8 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     unitsBeforeClean: units.length,
     cleanedUnits: cleanedUnits.length,
   });
+
+  console.log("CLEANED UNIT SAMPLE", cleanedUnits[0]);
 
   return { properties, floorplans, units: cleanedUnits };
 }
