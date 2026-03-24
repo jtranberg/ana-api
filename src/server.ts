@@ -24,6 +24,8 @@ import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter.js";
 import importRoutes from "./routes/import.routes.js";
 // import importProxyRoutes from "./routes/importProxy.routes.js";
 
+import { generateZumperFeed } from "./lib/generateZumperFeed";
+
 dotenv.config();
 
 /* =========================================================
@@ -311,6 +313,41 @@ app.get(
   })
 );
 
+
+// zumper
+
+app.get("/feeds/zumper.json", async (req, res) => {
+  const token = req.get("x-feed-token") || req.query.token;
+
+  if (process.env.FEED_TOKEN && token !== process.env.FEED_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const availableOnly =
+      String(req.query.available || "").toLowerCase() === "true";
+
+    const canonical = await getCanonicalFromWebflow();
+
+    const feed = generateZumperFeed(canonical, { availableOnly });
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${
+        availableOnly ? "zumper_available" : "zumper_full"
+      }.json"`
+    );
+
+    return res.status(200).json(feed);
+  } catch (error: any) {
+    console.error("zumper feed error:", error);
+    return res.status(500).json({
+      error: "Failed to generate Zumper feed",
+      details: error?.message || String(error),
+    });
+  }
+});
 /* =========================================================
    Feed + Job endpoints (protected with FEED_TOKEN)
 ========================================================= */
