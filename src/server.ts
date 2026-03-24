@@ -25,6 +25,8 @@ import importRoutes from "./routes/import.routes.js";
 // import importProxyRoutes from "./routes/importProxy.routes.js";
 
 import { generateZumperFeed } from "./lib/generateZumperFeed";
+import { generateZillowFeed } from "./lib/generateZillowFeed";
+import { generateRentalsCaFeed } from "./lib/generateRentalsCaFeed";
 
 dotenv.config();
 
@@ -344,6 +346,78 @@ app.get("/feeds/zumper.json", async (req, res) => {
     console.error("zumper feed error:", error);
     return res.status(500).json({
       error: "Failed to generate Zumper feed",
+      details: error?.message || String(error),
+    });
+  }
+});
+
+app.get("/feeds/zillow.json", async (req, res) => {
+  const token = req.get("x-feed-token") || req.query.token;
+
+  if (process.env.FEED_TOKEN && token !== process.env.FEED_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const availableOnly =
+      String(req.query.available || "").toLowerCase() === "true";
+
+    const canonical = await getCanonicalFromWebflow();
+
+    const feed = generateZillowFeed(canonical, {
+      availableOnly,
+      siteBaseUrl: process.env.SITE_BASE_URL,
+    });
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${
+        availableOnly ? "zillow_available" : "zillow_full"
+      }.json"`
+    );
+
+    return res.status(200).json(feed);
+  } catch (error: any) {
+    console.error("zillow feed error:", error);
+    return res.status(500).json({
+      error: "Failed to generate Zillow feed",
+      details: error?.message || String(error),
+    });
+  }
+});
+
+app.get("/feeds/rentals-ca.json", async (req, res) => {
+  const token = req.get("x-feed-token") || req.query.token;
+
+  if (process.env.FEED_TOKEN && token !== process.env.FEED_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const availableOnly =
+      String(req.query.available || "").toLowerCase() === "true";
+
+    const canonical = await getCanonicalFromWebflow();
+
+    const feed = generateRentalsCaFeed(canonical, {
+      availableOnly,
+      siteBaseUrl: process.env.SITE_BASE_URL,
+    });
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${
+        availableOnly ? "rentals_ca_available" : "rentals_ca_full"
+      }.json"`
+    );
+
+    return res.status(200).json(feed);
+  } catch (error: any) {
+    console.error("rentals.ca feed error:", error);
+    return res.status(500).json({
+      error: "Failed to generate Rentals.ca feed",
       details: error?.message || String(error),
     });
   }
