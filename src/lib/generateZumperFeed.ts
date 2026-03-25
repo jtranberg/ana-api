@@ -220,7 +220,9 @@ export function generateZumperFeed(
   }
 ): ZumperFeed {
   const availableOnly = opts?.availableOnly === true;
-  const siteBaseUrl = cleanString(opts?.siteBaseUrl)?.replace(/\/+$/, "") || null;
+  const siteBaseUrl =
+    cleanString(opts?.siteBaseUrl)?.replace(/\/+$/, "") ||
+    "https://wfcjan2026.webflow.io";
 
   const propertyMap = new Map<string, Property>(
     data.properties.map((p) => [p.propertyId, p])
