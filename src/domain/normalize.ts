@@ -3,12 +3,7 @@ import type { CanonicalData, Property, Floorplan, Unit } from "./canonicalTypes.
 import type { WebflowV2Item } from "../webflow/client.js";
 import { WebflowClient } from "../webflow/client.js";
 
-/**
- * Webflow field keys (as they appear in fieldData).
- * Update these slugs if your Webflow CMS uses different ones.
- */
 const FIELDS = {
-  // Properties collection fields (v2 slugs)
   property: {
     nameRT: "property-name-rt",
     name: "property-name",
@@ -43,7 +38,6 @@ const FIELDS = {
     amenity6: "amenity-6",
   },
 
-  // Units collection fields (v2 slugs)
   unit: {
     propertyRef: "property-2",
     unitNumber: "unit-number",
@@ -68,7 +62,7 @@ function stripHtml(s: string): string {
 
 function asString(v: unknown): string {
   if (v == null) return "";
-  return String(v);
+  return String(v).trim();
 }
 
 function asNumber(v: unknown): number | undefined {
@@ -82,9 +76,10 @@ function asBool(v: unknown): boolean | undefined {
   if (v == null) return undefined;
   if (typeof v === "string") {
     const s = v.trim().toLowerCase();
-    if (["true", "yes", "1"].includes(s)) return true;
-    if (["false", "no", "0"].includes(s)) return false;
+    if (["true", "yes", "1", "available"].includes(s)) return true;
+    if (["false", "no", "0", "unavailable"].includes(s)) return false;
   }
+  if (typeof v === "number") return v !== 0;
   return undefined;
 }
 
@@ -148,10 +143,42 @@ function uniqStrings(arr: string[]): string[] {
   return out;
 }
 
-/**
- * TEMP PATCH (REMOVE AFTER WEBFLOW CMS UPDATE)
- * Extract Address fields from rich text more safely.
- */
+function warn(scope: "property" | "unit" | "floorplan", id: string, message: string) {
+  console.warn(`[normalize:${scope}] ${id} - ${message}`);
+}
+
+function normalizeRegion(region: string, city: string): string {
+  const raw = region.trim().toUpperCase();
+  const cityNorm = city.trim();
+
+  if (["Vancouver", "North Vancouver", "West Vancouver", "Richmond"].includes(cityNorm)) {
+    return "BC";
+  }
+
+  const regionMap: Record<string, string> = {
+    "BRITISH COLUMBIA": "BC",
+    "ALBERTA": "AB",
+    "SASKATCHEWAN": "SK",
+    "MANITOBA": "MB",
+    "ONTARIO": "ON",
+    "QUEBEC": "QC",
+    "NEW BRUNSWICK": "NB",
+    "NOVA SCOTIA": "NS",
+    "PRINCE EDWARD ISLAND": "PE",
+    "NEWFOUNDLAND AND LABRADOR": "NL",
+    "YUKON": "YT",
+    "NORTHWEST TERRITORIES": "NT",
+    "NUNAVUT": "NU",
+  };
+
+  return regionMap[raw] || raw || "BC";
+}
+
+function normalizePostal(postal: string): string {
+  const cleaned = postal.toUpperCase().replace(/\s+/g, " ").trim();
+  return cleaned || "V0V 0V0";
+}
+
 function extractAddressPartsFromDescription(descriptionHtml: string): {
   address1?: string;
   city?: string;
@@ -159,7 +186,6 @@ function extractAddressPartsFromDescription(descriptionHtml: string): {
   postal?: string;
 } {
   const clean = stripHtml(descriptionHtml);
-
   const m = clean.match(/Address:\s*([^|]+?)(?:Postal Code:|$)/i);
   if (!m) return {};
 
@@ -186,6 +212,7 @@ function extractAddressPartsFromDescription(descriptionHtml: string): {
 function extractImageUrlsFromRichText(html: string): string[] {
   const s = asString(html);
   if (!s) return [];
+
   const urls = new Set<string>();
 
   for (const m of s.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)) {
@@ -199,6 +226,25 @@ function extractImageUrlsFromRichText(html: string): string[] {
   }
 
   return [...urls];
+}
+
+function buildFallbackProperty(): Property {
+  return {
+    propertyId: "fallback-property",
+    name: "Fallback Property",
+    address1: "Address Pending",
+    city: "Unknown City",
+    region: "BC",
+    postal: "V0V 0V0",
+    country: "CA",
+    lat: 49.2827,
+    lng: -123.1207,
+    description: "Auto-generated fallback property for unmapped units.",
+    amenities: [],
+    images: [],
+    structureType: "Apartment",
+    unitCount: 0,
+  };
 }
 
 export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
@@ -223,11 +269,8 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     includeArchived: true,
   });
 
-  console.log("RAW UNIT SAMPLE", unitsRaw[0]?.fieldData);
-
   const properties: Property[] = propertiesRaw.map((p) => {
     const d = fd(p);
-
     const descriptionHtml = asString(d[FIELDS.property.description]);
     const parsedAddr = extractAddressPartsFromDescription(descriptionHtml);
 
@@ -237,7 +280,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
         extractImageUrl(d[FIELDS.property.support1]),
         extractImageUrl(d[FIELDS.property.support2]),
         extractImageUrl(d[FIELDS.property.support3]),
-
         extractImageUrl(d["main-image"]),
         extractImageUrl(d["featured-image"]),
         extractImageUrl(d["thumbnail-image"]),
@@ -251,13 +293,20 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const address1 = firstNonEmpty(
       pickTextField(d, [FIELDS.property.address1]),
       pickTextField(d, ["street-address", "address1", "address", "street"]),
-      parsedAddr.address1
+      parsedAddr.address1,
+      "Address Pending"
+    );
+
+    const address2 = firstNonEmpty(
+      pickTextField(d, [FIELDS.property.address2]),
+      pickTextField(d, ["address-2", "address2", "suite", "unit"])
     );
 
     const city = firstNonEmpty(
       pickTextField(d, [FIELDS.property.cityName]),
       pickTextField(d, ["city-name", "city", "location-city", "market-city"]),
-      parsedAddr.city
+      parsedAddr.city,
+      "Unknown City"
     );
 
     const rawRegion = firstNonEmpty(
@@ -265,10 +314,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       parsedAddr.region
     );
 
-    const region =
-      ["Vancouver", "North Vancouver", "West Vancouver", "Richmond"].includes(city)
-        ? "BC"
-        : rawRegion || "BC";
+    const region = normalizeRegion(rawRegion, city);
 
     const rawPostal = firstNonEmpty(
       pickTextField(d, [FIELDS.property.postal]),
@@ -276,34 +322,36 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       parsedAddr.postal
     );
 
-    const postal = rawPostal || "V0V 0V0";
+    const postal = normalizePostal(rawPostal);
+
+    const name = firstNonEmpty(
+      stripHtml(asString(d[FIELDS.property.nameRT])),
+      stripHtml(asString(d["name"])),
+      stripHtml(asString(d[FIELDS.property.name])),
+      `Property-${p.id}`
+    );
+
+    const lat = asNumber(d[FIELDS.property.lat]) ?? 49.2827;
+    const lng = asNumber(d[FIELDS.property.lng]) ?? -123.1207;
+    const description =
+      stripHtml(descriptionHtml) || "Description pending.";
+    const structureType = "Apartment";
 
     return {
       propertyId: p.id,
-
-      name:
-        stripHtml(asString(d[FIELDS.property.nameRT])) ||
-        stripHtml(asString(d["name"])) ||
-        stripHtml(asString(d[FIELDS.property.name])) ||
-        "",
-
-      address1: address1 || "",
-      address2: pickTextField(d, [FIELDS.property.address2]) || undefined,
-
-      city: city || "",
+      name,
+      address1,
+      address2: address2 || undefined,
+      city,
       region,
       postal,
       country: "CA",
-
-      lat: asNumber(d[FIELDS.property.lat]),
-      lng: asNumber(d[FIELDS.property.lng]),
-
+      lat,
+      lng,
       phone: undefined,
       email: undefined,
       website: undefined,
-
-      description: stripHtml(descriptionHtml) || undefined,
-
+      description,
       amenities: [
         asString(d[FIELDS.property.amenity1]),
         asString(d[FIELDS.property.amenity2]),
@@ -312,13 +360,18 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
         asString(d[FIELDS.property.amenity5]),
         asString(d[FIELDS.property.amenity6]),
       ].filter(Boolean),
-
       images,
+      structureType,
+      unitCount: 0,
     };
   });
 
-  const propertyById = new Map(properties.map((x) => [x.propertyId, x]));
+  if (properties.length === 0) {
+    warn("property", "system", "no properties returned from CMS → creating fallback property");
+    properties.push(buildFallbackProperty());
+  }
 
+  const propertyById = new Map(properties.map((x) => [x.propertyId, x]));
   const floorplans: Floorplan[] = [];
   const floorplanKeyToId = new Map<string, string>();
   const units: Unit[] = [];
@@ -326,46 +379,34 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
   for (const u of unitsRaw) {
     const d = fd(u);
 
-    const propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
-    const available = asBool(d[FIELDS.unit.available]) ?? false;
+    let propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
+    if (!propertyId || !propertyById.has(propertyId)) {
+      warn("unit", u.id, "missing or invalid propertyRef → fallback property assigned");
+      propertyId = properties[0]?.propertyId ?? "fallback-property";
+    }
 
-    const rentVal =
+    let available = asBool(d[FIELDS.unit.available]);
+    if (available === undefined) {
+      available = true;
+      warn("unit", u.id, "missing available flag → default TRUE");
+    }
+
+    let rentVal =
       asNumber(d[FIELDS.unit.rent]) ??
       asNumber(d["rent"]) ??
       asNumber(d["price"]);
 
-    const beds = asNumber(d[FIELDS.unit.beds]);
-    const baths = asNumber(d[FIELDS.unit.baths]);
-    const sqft = asNumber(d[FIELDS.unit.sqft]);
-
-    if (rentVal == null || rentVal <= 0) {
-      console.log("SKIPPING UNIT FOR MISSING RENT", {
-        unitId: u.id,
-        unitNumber: d[FIELDS.unit.unitNumber],
-        propertyId,
-        rentFieldSlug: FIELDS.unit.rent,
-        rentFieldValue: d[FIELDS.unit.rent],
-        rentRaw: d["rent"],
-        priceRaw: d["price"],
-        allKeys: Object.keys(d),
-      });
-      continue;
+    if (rentVal == null || rentVal < 0) {
+      rentVal = 0;
+      warn("unit", u.id, "missing/invalid rent → fallback 0");
     }
 
-    console.log("UNIT WITH RENT", {
-      unitId: u.id,
-      unitNumber: d[FIELDS.unit.unitNumber],
-      propertyId,
-      rentVal,
-      beds,
-      baths,
-      sqft,
-      available,
-    });
+    const beds = asNumber(d[FIELDS.unit.beds]) ?? 0;
+    const baths = asNumber(d[FIELDS.unit.baths]) ?? 0;
+    const sqft = asNumber(d[FIELDS.unit.sqft]) ?? 0;
+    const unitType = asString(d[FIELDS.unit.unitType] ?? "Unit") || "Unit";
 
-    const unitType = asString(d[FIELDS.unit.unitType] ?? "Unit");
-
-    const fpKey = `${propertyId}|${unitType}|${beds ?? "?"}|${baths ?? "?"}|${sqft ?? "?"}`;
+    const fpKey = `${propertyId}|${unitType}|${beds}|${baths}|${sqft}`;
 
     let floorplanId = floorplanKeyToId.get(fpKey);
     if (!floorplanId) {
@@ -373,31 +414,38 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       floorplanKeyToId.set(fpKey, floorplanId);
 
       const inheritedImages = propertyById.get(propertyId)?.images;
+
       floorplans.push({
         floorplanId,
         propertyId,
         name: unitType,
-        beds: beds ?? 0,
-        baths: baths ?? 0,
+        beds,
+        baths,
         sqftMin: sqft,
         sqftMax: sqft,
         images:
           inheritedImages && inheritedImages.length
             ? uniqStrings(inheritedImages).slice(0, 8)
             : undefined,
+        unitCount: 0,
+        unitsAvailable: 0,
       });
     }
 
-    const availableDate = toIsoDateOnly(d[FIELDS.unit.availableDate]);
-    const updated = u.lastUpdated ? new Date(u.lastUpdated).toISOString() : isoNow();
+    let availableDate = toIsoDateOnly(d[FIELDS.unit.availableDate]);
+    if (!availableDate) {
+      availableDate = new Date().toISOString().slice(0, 10);
+      warn("unit", u.id, "missing availableDate → using today");
+    }
 
+    const updated = u.lastUpdated ? new Date(u.lastUpdated).toISOString() : isoNow();
     const inheritedUnitImages = propertyById.get(propertyId)?.images;
 
     units.push({
       unitId: u.id,
       propertyId,
       floorplanId,
-      unitNumber: asString(d[FIELDS.unit.unitNumber]) || undefined,
+      unitNumber: asString(d[FIELDS.unit.unitNumber]) || `Unit-${u.id}`,
       rent: rentVal,
       rentMax: undefined,
       available,
@@ -407,21 +455,40 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
           ? uniqStrings(inheritedUnitImages).slice(0, 8)
           : undefined,
       lastUpdated: updated,
+      sqftMin: sqft,
+      sqftMax: sqft,
+      occupancyStatus: available ? "Vacant" : "Occupied",
+      leasedStatus: available ? "Available" : "Leased",
+      vacancyClass: available ? "Unoccupied" : "Occupied",
     });
   }
 
-  const cleanedUnits = units.filter(
-    (u) => u.propertyId && propertyById.has(u.propertyId) && u.floorplanId
-  );
+  const floorplanById = new Map(floorplans.map((fp) => [fp.floorplanId, fp]));
+
+  for (const unit of units) {
+    const property = propertyById.get(unit.propertyId);
+    if (property) {
+      property.unitCount = (property.unitCount ?? 0) + 1;
+    }
+
+    const fp = floorplanById.get(unit.floorplanId);
+    if (fp) {
+      fp.unitCount = (fp.unitCount ?? 0) + 1;
+      if (unit.available) {
+        fp.unitsAvailable = (fp.unitsAvailable ?? 0) + 1;
+      }
+    }
+  }
+
+  if (units.length === 0) {
+    warn("unit", "system", "no units returned from CMS");
+  }
 
   console.log("CANONICAL COUNTS", {
     properties: properties.length,
     floorplans: floorplans.length,
-    unitsBeforeClean: units.length,
-    cleanedUnits: cleanedUnits.length,
+    units: units.length,
   });
 
-  console.log("CLEANED UNIT SAMPLE", cleanedUnits[0]);
-
-  return { properties, floorplans, units: cleanedUnits };
+  return { properties, floorplans, units };
 }
