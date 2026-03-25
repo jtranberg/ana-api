@@ -56,30 +56,24 @@ function inferFloorplanMarketRent(units: Unit[]): { min: number; max: number } {
   };
 }
 
-function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/^wall\s+/i, "")
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-}
-
-function buildUnitAvailabilityURL(property: Property, unit: Unit): string {
+function buildUnitAvailabilityURL(_property: Property, unit: Unit): string {
   const siteBase = "https://wfcjan2026.webflow.io";
-  const propertySlug = slugify(property.name || property.propertyId);
-  const unitSlug = slugify(unit.unitNumber || unit.unitId);
 
-  return `${siteBase}/units/${propertySlug}-unit-${unitSlug}`;
+  if (unit.unitPageSlug?.trim()) {
+    return `${siteBase}/units/${unit.unitPageSlug.trim()}`;
+  }
+
+  return "";
 }
 
 function buildPropertyAvailabilityURL(property: Property): string {
   const siteBase = "https://wfcjan2026.webflow.io";
-  const propertySlug = slugify(property.name || property.propertyId);
 
-  return `${siteBase}/properties/${propertySlug}`;
+  if (property.propertyPageSlug?.trim()) {
+    return `${siteBase}/properties/${property.propertyPageSlug.trim()}`;
+  }
+
+  return "";
 }
 
 function mapAmenityType(label: string): string {
