@@ -1,5 +1,5 @@
 import type { CanonicalData, Floorplan, Property, Unit } from "../domain/canonicalTypes";
-import { createXmlRoot, xmlToString } from "../feeds/xmlWriter";
+import { createXmlRoot, xmlToString } from "./xmlWriter";
 
 export type ApartmentsFeedBuild = {
   xml: string;
