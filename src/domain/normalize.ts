@@ -57,7 +57,25 @@ function fd(item: WebflowV2Item): Record<string, any> {
 }
 
 function stripHtml(s: string): string {
-  return s.replace(/<[^>]*>/g, "").trim();
+  return s
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<li>/gi, "• ")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function polishDescription(text: string): string {
+  return text
+    .replace(/\s*(Address:)/g, "\n$1")
+    .replace(/\s*(Completion:)/g, "\n$1")
+    .replace(/\s*(Community:)/g, "\n$1")
+    .replace(/\s*(Features:)/g, "\n$1")
+    .trim();
 }
 
 function asString(v: unknown): string {
@@ -228,6 +246,34 @@ function extractImageUrlsFromRichText(html: string): string[] {
   return [...urls];
 }
 
+function looksHashed(value: string): boolean {
+  const s = value.trim();
+  return /^[a-f0-9]{24,}$/i.test(s) || /^[a-f0-9-]{24,}$/i.test(s);
+}
+
+function buildFloorplanName(unitType: string, beds: number, baths: number, sqft?: number): string {
+  const clean = unitType.trim();
+
+  if (clean && !looksHashed(clean)) return clean;
+
+  const bedLabel = beds === 0 ? "Studio" : `${beds} Bed`;
+  const bathLabel = `${baths} Bath`;
+  const sizeLabel = sqft ? ` • ${sqft} SF` : "";
+
+  return `${bedLabel} / ${bathLabel}${sizeLabel}`;
+}
+
+function deriveStructureType(name: string, description: string): string {
+  const text = `${name} ${description}`.toLowerCase();
+
+  if (text.includes("townhome") || text.includes("townhouse")) return "Townhome";
+  if (text.includes("high-rise") || text.includes("high rise")) return "High Rise";
+  if (text.includes("mid-rise") || text.includes("mid rise")) return "Mid Rise";
+  if (text.includes("garden")) return "Garden Style";
+
+  return "Apartment";
+}
+
 function buildFallbackProperty(): Property {
   return {
     propertyId: "fallback-property",
@@ -333,9 +379,8 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
     const lat = asNumber(d[FIELDS.property.lat]) ?? 49.2827;
     const lng = asNumber(d[FIELDS.property.lng]) ?? -123.1207;
-    const description =
-      stripHtml(descriptionHtml) || "Description pending.";
-    const structureType = "Apartment";
+    const description = polishDescription(stripHtml(descriptionHtml)) || "Description pending.";
+    const structureType = deriveStructureType(name, description);
 
     return {
       propertyId: p.id,
@@ -404,9 +449,11 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const beds = asNumber(d[FIELDS.unit.beds]) ?? 0;
     const baths = asNumber(d[FIELDS.unit.baths]) ?? 0;
     const sqft = asNumber(d[FIELDS.unit.sqft]) ?? 0;
-    const unitType = asString(d[FIELDS.unit.unitType] ?? "Unit") || "Unit";
 
-    const fpKey = `${propertyId}|${unitType}|${beds}|${baths}|${sqft}`;
+    const rawUnitType = asString(d[FIELDS.unit.unitType] ?? "Unit") || "Unit";
+    const floorplanName = buildFloorplanName(rawUnitType, beds, baths, sqft);
+
+    const fpKey = `${propertyId}|${floorplanName}|${beds}|${baths}|${sqft}`;
 
     let floorplanId = floorplanKeyToId.get(fpKey);
     if (!floorplanId) {
@@ -418,7 +465,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       floorplans.push({
         floorplanId,
         propertyId,
-        name: unitType,
+        name: floorplanName,
         beds,
         baths,
         sqftMin: sqft,
