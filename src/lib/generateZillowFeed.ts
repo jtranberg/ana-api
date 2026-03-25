@@ -82,16 +82,7 @@ function toNumber(value: unknown): number | null {
 }
 
 function isAvailableNow(unit: Unit): boolean {
-  if (unit.available) return true;
-  if (!unit.availableDate) return false;
-
-  const d = new Date(unit.availableDate);
-  if (Number.isNaN(d.getTime())) return false;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return d <= today;
+  return unit.available === true;
 }
 
 function guessUnitType(beds: number | null): string {
