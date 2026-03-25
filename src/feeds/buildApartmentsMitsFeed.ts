@@ -60,6 +60,7 @@ function slugify(input: string): string {
   return input
     .toLowerCase()
     .trim()
+    .replace(/^wall\s+/i, "")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
@@ -68,7 +69,6 @@ function slugify(input: string): string {
 
 function buildUnitAvailabilityURL(property: Property, unit: Unit): string {
   const siteBase = "https://wfcjan2026.webflow.io";
-
   const propertySlug = slugify(property.name || property.propertyId);
   const unitSlug = slugify(unit.unitNumber || unit.unitId);
 
