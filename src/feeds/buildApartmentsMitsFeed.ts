@@ -95,12 +95,12 @@ function mapAmenityType(label: string): string {
   return "Other";
 }
 
-function validPostal(postal?: string): boolean {
+function validPostal(postal?: string | null): boolean {
   const p = (postal || "").trim().toUpperCase();
   return Boolean(p) && p !== "V0V 0V0";
 }
 
-function validDescription(desc?: string): boolean {
+function validDescription(desc?: string | null): boolean {
   const d = (desc || "").trim();
   return Boolean(d) && d !== "Description pending.";
 }
@@ -171,22 +171,22 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     propertyIdNode.ele("MarketingName").txt(text(property.name, "Unnamed Property")).up();
 
     if (property.website) {
-      propertyIdNode.ele("WebSite").txt(property.website).up();
+      propertyIdNode.ele("WebSite").txt(text(property.website)).up();
     }
 
     const addressNode = propertyIdNode.ele("Address");
     addressNode.att("AddressType", "property");
     addressNode.ele("AddressLine1").txt(text(property.address1, "Address Pending")).up();
     if (property.address2) {
-      addressNode.ele("AddressLine2").txt(property.address2).up();
+      addressNode.ele("AddressLine2").txt(text(property.address2)).up();
     }
     addressNode.ele("City").txt(text(property.city, "Unknown City")).up();
     addressNode.ele("State").txt(text(property.region, "BC")).up();
-    addressNode.ele("PostalCode").txt(validPostal(property.postal) ? property.postal! : "").up();
+    addressNode.ele("PostalCode").txt(validPostal(property.postal) ? text(property.postal) : "").up();
     addressNode.up();
 
     if (property.email) {
-      propertyIdNode.ele("Email").txt(property.email).up();
+      propertyIdNode.ele("Email").txt(text(property.email)).up();
     }
 
     const ils = propertyNode.ele("ILS_Identification");
@@ -203,7 +203,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     info.ele("UnitCount").txt(text(property.unitCount ?? propertyUnits.length, String(propertyUnits.length))).up();
 
     if (validDescription(property.description)) {
-      info.ele("LongDescription").txt(property.description!).up();
+      info.ele("LongDescription").txt(text(property.description)).up();
     }
 
     const rents = propertyUnits
