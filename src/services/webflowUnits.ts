@@ -482,12 +482,19 @@ export async function searchUnitsInNode(
         }
       }
 
-      if (
-        unitNumber &&
-        String(fd[UNIT_FIELDS.unitNumber] ?? "").trim() !== String(unitNumber).trim()
-      ) {
-        continue;
-      }
+      if (unitNumber) {
+  const unitValue = String(fd[UNIT_FIELDS.unitNumber] ?? "")
+    .toLowerCase()
+    .trim();
+
+  const queryValue = String(unitNumber)
+    .toLowerCase()
+    .trim();
+
+  if (!unitValue.includes(queryValue)) {
+    continue;
+  }
+}
 
       if (available !== undefined && Boolean(fd[UNIT_FIELDS.available]) !== Boolean(available)) {
         continue;
