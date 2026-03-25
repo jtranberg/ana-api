@@ -17,7 +17,8 @@ import cors from "cors";
 import { generateApartmentsFeedJob } from "./jobs/generateApartmentsFeedJob.js";
 import { getCanonicalFromWebflow } from "./domain/normalize.js";
 import { WebflowClient } from "./webflow/client.js";
-import { generateApartmentsFull } from "./feeds/generateFeed.js";
+// import { generateApartmentsFull } from "./feeds/generateFeed.js";
+import { buildApartmentsMitsFeed } from "./feeds/buildApartmentsMitsFeed.js";
 
 import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
 import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter.js";
@@ -363,8 +364,8 @@ app.get(
     const data = await getCanonicalFromWebflow();
     const filtered = availableOnly ? filterCanonicalAvailableOnly(data as any) : data;
 
-    const result = await generateApartmentsFull(filtered as any);
-    const xml = (result as any).xml ?? (result as any).content ?? result;
+    const result = buildApartmentsMitsFeed(filtered as any);
+    const xml = result.xml;
 
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
 
@@ -500,12 +501,12 @@ app.get(
   requireFeedToken,
   asyncHandler(async (_req, res) => {
     const data = await getCanonicalFromWebflow();
-    const result = await generateApartmentsFull(data as any);
+    const result = buildApartmentsMitsFeed(data as any);
 
     res.json({
-      recordCount: (result as any).recordCount,
-      blockedCount: (result as any).blockedCount,
-      blockedSample: (result as any).blockedSample?.slice(0, 25) ?? [],
+      recordCount: result.recordCount,
+      blockedCount: result.blockedCount,
+      blockedSample: result.blockedSample?.slice(0, 25) ?? [],
       canonicalUnitSample: data.units.slice(0, 3),
       canonicalPropertySample: data.properties.slice(0, 1),
       canonicalFloorplanSample: data.floorplans.slice(0, 2),
