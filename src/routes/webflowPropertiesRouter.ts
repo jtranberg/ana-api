@@ -17,11 +17,17 @@ function mustEnv(name: string): string {
   return v;
 }
 
-// Webflow Properties field slugs (adjust if yours differ)
+// Webflow Properties field slugs
 const FIELDS = {
   name: "name",
   suite: "suite",
   photoUrl: "photo-url",
+
+  contactEmail: "contact-email",
+  externalWebsite: "external-website",
+  propertyAddress: "property-address",
+  latitude: "latitude",
+  longitude: "longitude",
 };
 
 type WebflowItem = {
@@ -35,12 +41,21 @@ type WebflowItem = {
 
 function toProperty(item: WebflowItem) {
   const fd = item.fieldData || {};
+
   return {
-    _id: item.id, // frontend expects _id
+    _id: item.id,
     webflowId: item.id,
+
     name: String(fd[FIELDS.name] || ""),
     suite: String(fd[FIELDS.suite] || ""),
     photoUrl: String(fd[FIELDS.photoUrl] || ""),
+
+    email: String(fd[FIELDS.contactEmail] || ""),
+    website: String(fd[FIELDS.externalWebsite] || ""),
+    propertyAddress: String(fd[FIELDS.propertyAddress] || ""),
+    latitude: String(fd[FIELDS.latitude] || ""),
+    longitude: String(fd[FIELDS.longitude] || ""),
+
     isDraft: !!item.isDraft,
     isArchived: !!item.isArchived,
     lastPublished: item.lastPublished,
@@ -57,10 +72,12 @@ router.get("/properties", async (_req: Request, res: Response) => {
     const collectionId = mustEnv("WEBFLOW_COLLECTION_PROPERTIES");
     const wf = new WebflowClient(token);
 
-    // ✅ Use public v2 wrapper (request() stays private)
-    const data = await wf.v2<{ items?: WebflowItem[] }>(`/collections/${collectionId}/items`, { method: "GET" });
+    const data = await wf.v2<{ items?: WebflowItem[] }>(
+      `/collections/${collectionId}/items`,
+      { method: "GET" }
+    );
 
-    const items: WebflowItem[] = Array.isArray(data?.items) ? (data.items as WebflowItem[]) : [];
+    const items: WebflowItem[] = Array.isArray(data?.items) ? data.items as WebflowItem[] : [];
     return res.json(items.map(toProperty));
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || "Failed to fetch properties" });
@@ -79,6 +96,12 @@ router.post("/properties", requireAdmin, async (req: Request, res: Response) => 
     const name = String(req.body?.name || "").trim();
     const suite = String(req.body?.suite || "").trim();
     const photoUrl = String(req.body?.photoUrl || "").trim();
+    const email = String(req.body?.email || "").trim();
+    const website = String(req.body?.website || "").trim();
+    const propertyAddress = String(req.body?.propertyAddress || "").trim();
+    const latitude = String(req.body?.latitude || "").trim();
+    const longitude = String(req.body?.longitude || "").trim();
+
     if (!name) return res.status(400).json({ error: "name is required" });
 
     const created = await wf.createItem(collectionId, {
@@ -87,6 +110,11 @@ router.post("/properties", requireAdmin, async (req: Request, res: Response) => 
         [FIELDS.name]: name,
         [FIELDS.suite]: suite,
         [FIELDS.photoUrl]: photoUrl,
+        [FIELDS.contactEmail]: email,
+        [FIELDS.externalWebsite]: website,
+        [FIELDS.propertyAddress]: propertyAddress,
+        [FIELDS.latitude]: latitude,
+        [FIELDS.longitude]: longitude,
       },
     });
 

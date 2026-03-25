@@ -454,27 +454,34 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       asString(d[FIELDS.property.amenity6]),
     ]);
 
-    return {
-      propertyId: p.id,
-      name,
-      address1,
-      address2: address2 || undefined,
-      city,
-      region,
-      postal,
-      country: "CA",
-      lat,
-      lng,
-      phone: undefined,
-      email: undefined,
-      website: undefined,
-      description,
-      amenities,
-      images,
-      structureType,
-      unitCount: 0,
-      propertyPageSlug: asString(d[FIELDS.property.slug]) || undefined,
-    };
+  return {
+  propertyId: p.id,
+  name,
+  address1,
+  address2: address2 || undefined,
+  city,
+  region,
+  postal,
+  country: "CA",
+  lat,
+  lng,
+
+  phone:
+    asString(d["contact-phone"]) || undefined,
+
+  email:
+    asString(d["contact-email"]) || undefined,
+
+  website:
+    asString(d["external-website"]) || undefined,
+
+  description,
+  amenities,
+  images,
+  structureType,
+  unitCount: 0,
+  propertyPageSlug: asString(d[FIELDS.property.slug]) || undefined,
+};
   });
 
   const properties = propertiesPreFilter.filter((p) => {

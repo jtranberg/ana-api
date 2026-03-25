@@ -1,23 +1,23 @@
 export type Property = {
   propertyId: string;
-  name: string;                 // Property MarketingName
-  address1: string;             // Address1
+  name: string;
+  address1: string;
   address2?: string;
-  city: string;                 // City
-  region: string;               // State / province
-  postal: string;               // PostalCode
+  city: string;
+  region: string;
+  postal: string;
   country: string;
-  lat?: number;                 // Latitude
-  lng?: number;                 // Longitude
-  phone?: string;
-  email?: string;
-  website?: string;
-  description?: string;         // Property LongDescription
+  lat?: number;
+  lng?: number;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  description?: string | null;
   amenities?: string[];
   images?: string[];
-propertyPageSlug?: string;
-  structureType?: string;       // required by PDF
-  unitCount?: number;           // required by PDF
+  propertyPageSlug?: string;
+  structureType?: string;
+  unitCount?: number;
 };
 
 export type Floorplan = {
