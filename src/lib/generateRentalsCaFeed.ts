@@ -106,6 +106,130 @@ function guessCategory(beds: number | null): string {
   return "rental";
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((v): v is string => Boolean(v && v.trim())).map((v) => v.trim()))];
+}
+
+function cleanHtml(value: unknown): string | null {
+  const s = cleanString(value);
+  if (!s) return null;
+  return s.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || null;
+}
+
+function normalizeAmenity(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function extractAmenitiesFromText(text: string | null): string[] {
+  if (!text) return [];
+
+  const patterns: Array<{ label: string; regex: RegExp }> = [
+    { label: "EV Charging", regex: /\bev charging\b/i },
+    { label: "Fitness Centre", regex: /\bfitness (centre|center|room|facility)\b/i },
+    { label: "Bike Storage", regex: /\bbike storage\b/i },
+    { label: "Playground", regex: /\bplayground\b/i },
+    { label: "In-Suite Laundry", regex: /\bin[-\s]?suite laundry\b/i },
+    { label: "Laundry", regex: /\blaundry\b/i },
+    { label: "Storage", regex: /\bstorage\b/i },
+    { label: "Pet Friendly", regex: /\bpet[-\s]?friendly\b/i },
+    { label: "Hardwood Floors", regex: /\bhardwood\b/i },
+    { label: "Balcony", regex: /\bbalcony\b/i },
+    { label: "Parking", regex: /\bparking\b/i },
+    { label: "Elevator", regex: /\belevator\b/i },
+  ];
+
+  return patterns
+    .filter(({ regex }) => regex.test(text))
+    .map(({ label }) => label);
+}
+
+function getSlug(unit: Unit, property?: Property, floorplan?: Floorplan): string | null {
+  const candidates = [
+    cleanString((unit as Record<string, unknown>)["slug"]),
+    cleanString((unit as Record<string, unknown>)["urlSlug"]),
+    cleanString((unit as Record<string, unknown>)["unitSlug"]),
+    cleanString((property as Record<string, unknown> | undefined)?.["slug"]),
+    cleanString((floorplan as Record<string, unknown> | undefined)?.["slug"]),
+  ];
+
+  return candidates.find(Boolean) || null;
+}
+
+function buildPublicUnitUrl(
+  siteBaseUrl: string | null,
+  unit: Unit,
+  property?: Property,
+  floorplan?: Floorplan
+): string | null {
+  if (!siteBaseUrl) return null;
+
+  const slug = getSlug(unit, property, floorplan);
+  if (slug) return `${siteBaseUrl}/units/${slug}`;
+
+  const propertySlug =
+    cleanString((property as Record<string, unknown> | undefined)?.["slug"]) ||
+    cleanString(property?.name)
+      ?.toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+  const unitNumber = cleanString(unit.unitNumber)
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (propertySlug && unitNumber) {
+    return `${siteBaseUrl}/units/${propertySlug}-unit-${unitNumber}`;
+  }
+
+  return null;
+}
+
+function getAmenities(property?: Property, floorplan?: Floorplan, unit?: Unit): string[] {
+  const directAmenities = [
+    ...cleanArray(property?.amenities),
+    ...cleanArray((floorplan as Record<string, unknown> | undefined)?.["amenities"]),
+    ...cleanArray((unit as Record<string, unknown> | undefined)?.["amenities"]),
+  ];
+
+  const descriptionText = uniqueStrings([
+    cleanHtml(property?.description),
+    cleanHtml((floorplan as Record<string, unknown> | undefined)?.["description"]),
+    cleanHtml((unit as Record<string, unknown> | undefined)?.["description"]),
+  ]).join(" ");
+
+  const extracted = extractAmenitiesFromText(descriptionText);
+
+  return [...new Set([...directAmenities.map(normalizeAmenity), ...extracted])];
+}
+
+function getContact(property?: Property): {
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+} {
+  const record = (property as Record<string, unknown> | undefined) ?? {};
+
+  const phone =
+    cleanString(property?.phone) ||
+    cleanString(record["contactPhone"]) ||
+    cleanString(record["leasingPhone"]) ||
+    cleanString(record["phoneNumber"]);
+
+  const email =
+    cleanString(property?.email) ||
+    cleanString(record["contactEmail"]) ||
+    cleanString(record["leasingEmail"]);
+
+  const website =
+    cleanString(property?.website) ||
+    cleanString(record["propertyUrl"]) ||
+    cleanString(record["url"]);
+
+  return { phone, email, website };
+}
+
 export function generateRentalsCaFeed(
   data: CanonicalData,
   opts?: {
@@ -141,10 +265,8 @@ export function generateRentalsCaFeed(
     ];
 
     const uniqueImages = [...new Set(mergedImages)];
-
-    const url = siteBaseUrl
-      ? `${siteBaseUrl}/units/${unit.unitId}`
-      : null;
+    const contact = getContact(property);
+    const url = buildPublicUnitUrl(siteBaseUrl, unit, property, floorplan);
 
     return {
       id: `${unit.propertyId}_${unit.unitId}`,
@@ -190,15 +312,11 @@ export function generateRentalsCaFeed(
       },
 
       property: {
-        description: cleanString(property?.description),
-        amenities: cleanArray(property?.amenities),
+        description: cleanHtml(property?.description),
+        amenities: getAmenities(property, floorplan, unit),
       },
 
-      contact: {
-        phone: cleanString(property?.phone),
-        email: cleanString(property?.email),
-        website: cleanString(property?.website),
-      },
+      contact,
 
       url,
       updatedAt: cleanString(unit.lastUpdated),
@@ -206,7 +324,7 @@ export function generateRentalsCaFeed(
   });
 
   return {
-    provider: "Wall ST Syndicator",
+    provider: "Wall Syndicator",
     generatedAt: new Date().toISOString(),
     listings,
   };
