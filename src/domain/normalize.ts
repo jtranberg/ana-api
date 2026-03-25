@@ -36,6 +36,8 @@ const FIELDS = {
     amenity4: "amenity-4",
     amenity5: "amenity-5",
     amenity6: "amenity-6",
+
+    slug: "slug",
   },
 
   unit: {
@@ -49,6 +51,7 @@ const FIELDS = {
     rent: "rent",
     beds: "bedrooms",
     baths: "bathrooms",
+    slug: "slug",
   },
 };
 
@@ -349,6 +352,7 @@ function buildFallbackProperty(): Property {
     images: [],
     structureType: "Apartment",
     unitCount: 0,
+    propertyPageSlug: undefined,
   };
 }
 
@@ -469,6 +473,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       images,
       structureType,
       unitCount: 0,
+      propertyPageSlug: asString(d[FIELDS.property.slug]) || undefined,
     };
   });
 
@@ -582,6 +587,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       occupancyStatus: available ? "Vacant" : "Occupied",
       leasedStatus: available ? "Available" : "Leased",
       vacancyClass: available ? "Unoccupied" : "Occupied",
+      unitPageSlug: asString(d[FIELDS.unit.slug]) || undefined,
     });
   }
 

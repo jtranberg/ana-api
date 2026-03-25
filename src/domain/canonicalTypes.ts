@@ -15,7 +15,7 @@ export type Property = {
   description?: string;         // Property LongDescription
   amenities?: string[];
   images?: string[];
-
+propertyPageSlug?: string;
   structureType?: string;       // required by PDF
   unitCount?: number;           // required by PDF
 };
@@ -45,7 +45,7 @@ export type Unit = {
   availableDate?: string;       // ISO date
   images?: string[];
   lastUpdated: string;          // ISO timestamp
-
+unitPageSlug?: string;
   sqftMin?: number;             // MinSquareFeet
   sqftMax?: number;             // useful pair for size range / max sqft
   occupancyStatus?: string;     // UnitOccupancyStatus
