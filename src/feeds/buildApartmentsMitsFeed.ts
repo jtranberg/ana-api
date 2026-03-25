@@ -56,16 +56,30 @@ function inferFloorplanMarketRent(units: Unit[]): { min: number; max: number } {
   };
 }
 
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
 function buildUnitAvailabilityURL(property: Property, unit: Unit): string {
-  const base = property.website?.trim();
-  if (base) {
-    return `${base.replace(/\/+$/, "")}?unit=${encodeURIComponent(unit.unitNumber || unit.unitId)}`;
-  }
-  return "";
+  const siteBase = "https://wfcjan2026.webflow.io";
+
+  const propertySlug = slugify(property.name || property.propertyId);
+  const unitSlug = slugify(unit.unitNumber || unit.unitId);
+
+  return `${siteBase}/units/${propertySlug}-unit-${unitSlug}`;
 }
 
 function buildPropertyAvailabilityURL(property: Property): string {
-  return property.website?.trim() || "";
+  const siteBase = "https://wfcjan2026.webflow.io";
+  const propertySlug = slugify(property.name || property.propertyId);
+
+  return `${siteBase}/properties/${propertySlug}`;
 }
 
 function mapAmenityType(label: string): string {
