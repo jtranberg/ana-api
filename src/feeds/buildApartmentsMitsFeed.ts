@@ -46,7 +46,7 @@ function toDateParts(isoLike?: string): { Year: string; Month: string; Day: stri
 
 function inferFloorplanMarketRent(units: Unit[]): { min: number; max: number } {
   const rents = units
-    .map((u) => Number(u.rent))
+    .map((u) => Number(u.rentMax ?? u.rent))
     .filter((n) => Number.isFinite(n) && n >= 0);
 
   if (!rents.length) return { min: 0, max: 0 };
@@ -80,13 +80,37 @@ function mapAmenityType(label: string): string {
   if (s.includes("storage")) return "StorageSpace";
   if (s.includes("media")) return "MediaRoom";
   if (s.includes("conference")) return "ConferenceRoom";
+  if (s.includes("laundry")) return "Other";
+  if (s.includes("bike")) return "Other";
+  if (s.includes("pet")) return "Other";
 
   return "Other";
+}
+
+function validPostal(postal?: string): boolean {
+  const p = (postal || "").trim().toUpperCase();
+  return Boolean(p) && p !== "V0V 0V0";
+}
+
+function validDescription(desc?: string): boolean {
+  const d = (desc || "").trim();
+  return Boolean(d) && d !== "Description pending.";
+}
+
+function mergeUnitImages(unit: Unit, fp?: Floorplan, property?: Property): string[] {
+  return unique([
+    ...(unit.images || []),
+    ...(fp?.images || []),
+    ...(property?.images || []),
+  ]).slice(0, 20);
 }
 
 export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuild {
   const propertyById = new Map<string, Property>();
   for (const p of data.properties) propertyById.set(p.propertyId, p);
+
+  const floorplanById = new Map<string, Floorplan>();
+  for (const fp of data.floorplans) floorplanById.set(fp.floorplanId, fp);
 
   const floorplansByProperty = new Map<string, Floorplan[]>();
   for (const fp of data.floorplans) {
@@ -118,7 +142,11 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
 
   for (const property of data.properties) {
     const propertyUnits = unitsByProperty.get(property.propertyId) || [];
-    const propertyFloorplans = floorplansByProperty.get(property.propertyId) || [];
+    if (!propertyUnits.length) continue;
+
+    const propertyFloorplans = (floorplansByProperty.get(property.propertyId) || []).filter(
+      (fp) => (unitsByFloorplan.get(fp.floorplanId) || []).length > 0
+    );
 
     const physicalProperty = root.ele("PhysicalProperty");
     const propertyNode = physicalProperty.ele("Property");
@@ -146,7 +174,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     }
     addressNode.ele("City").txt(text(property.city, "Unknown City")).up();
     addressNode.ele("State").txt(text(property.region, "BC")).up();
-    addressNode.ele("PostalCode").txt(text(property.postal, "V0V 0V0")).up();
+    addressNode.ele("PostalCode").txt(validPostal(property.postal) ? property.postal! : "").up();
     addressNode.up();
 
     if (property.email) {
@@ -164,8 +192,11 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     const info = propertyNode.ele("Information");
     info.ele("StructureType").txt(text(property.structureType, "Apartment")).up();
     info.ele("BuildingCount").txt("1").up();
-    info.ele("UnitCount").txt(text(property.unitCount ?? propertyUnits.length, "0")).up();
-    info.ele("LongDescription").txt(text(property.description, "Description pending.")).up();
+    info.ele("UnitCount").txt(text(property.unitCount ?? propertyUnits.length, String(propertyUnits.length))).up();
+
+    if (validDescription(property.description)) {
+      info.ele("LongDescription").txt(property.description!).up();
+    }
 
     const rents = propertyUnits
       .map((u) => Number(u.rent))
@@ -180,15 +211,18 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       info.ele("PropertyAvailabilityURL").txt(propertyAvailabilityURL).up();
     }
 
+    let amenityRank = 1;
     for (const amenity of unique(property.amenities || [])) {
       const amenityNode = propertyNode.ele("Amenity");
       amenityNode.att("AmenityType", mapAmenityType(amenity));
       amenityNode.ele("Description").txt(amenity).up();
-      amenityNode.ele("Rank").txt("1").up();
+      amenityNode.ele("Rank").txt(String(amenityRank++)).up();
     }
 
     for (const fp of propertyFloorplans) {
       const fpUnits = unitsByFloorplan.get(fp.floorplanId) || [];
+      if (!fpUnits.length) continue;
+
       const rentRange = inferFloorplanMarketRent(fpUnits);
 
       const floorplanNode = propertyNode.ele("Floorplan");
@@ -196,14 +230,15 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       floorplanNode.att("IDType", "FloorPlanID");
 
       floorplanNode.ele("Name").txt(text(fp.name, "Unnamed Floorplan")).up();
-      floorplanNode.ele("UnitCount").txt(text(fp.unitCount ?? fpUnits.length, "0")).up();
+      floorplanNode.ele("UnitCount").txt(text(fp.unitCount ?? fpUnits.length, String(fpUnits.length))).up();
 
       if (propertyAvailabilityURL) {
         floorplanNode.ele("FloorplanAvailabilityURL").txt(propertyAvailabilityURL).up();
       }
 
-      floorplanNode.ele("UnitsAvailable").txt(text(fp.unitsAvailable ?? fpUnits.filter((u) => u.available).length, "0")).up();
-      floorplanNode.ele("DisplayedUnitsAvailable").txt(text(fp.unitsAvailable ?? fpUnits.filter((u) => u.available).length, "0")).up();
+      const unitsAvailable = fp.unitsAvailable ?? fpUnits.filter((u) => u.available).length;
+      floorplanNode.ele("UnitsAvailable").txt(text(unitsAvailable, "0")).up();
+      floorplanNode.ele("DisplayedUnitsAvailable").txt(text(unitsAvailable, "0")).up();
       floorplanNode.ele("FloorCount").txt("0").up();
 
       const bedRoom = floorplanNode.ele("Room");
@@ -213,7 +248,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
 
       const bathRoom = floorplanNode.ele("Room");
       bathRoom.att("RoomType", "Bathroom");
-      bathRoom.ele("Count").txt(decimalCount(fp.baths, "0.00")).up();
+      bathRoom.ele("Count").txt(decimalCount(fp.baths, "1.00")).up();
       bathRoom.ele("Comment").txt("").up();
 
       const sqftNode = floorplanNode.ele("SquareFeet");
@@ -242,16 +277,16 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     }
 
     for (const unit of propertyUnits) {
-      const fp = data.floorplans.find((f) => f.floorplanId === unit.floorplanId);
+      const fp = floorplanById.get(unit.floorplanId);
 
       const ilsUnit = propertyNode.ele("ILS_Unit");
       ilsUnit.att("IDValue", sanitizeId(unit.unitId, "unit-id"));
       ilsUnit.att("IDType", "ILS_UnitID");
 
-      const unitImages = unique(unit.images || []);
+      const unitImages = mergeUnitImages(unit, fp, property);
       let rank = 1;
 
-      for (const img of unitImages.slice(0, 20)) {
+      for (const img of unitImages) {
         const fileNode = ilsUnit.ele("File");
         fileNode.att("FileID", `unit_${unit.unitId}_${rank}`);
         fileNode.att("Active", "true");
@@ -283,7 +318,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       unitNode.ele("Featured").txt("false").up();
       unitNode.ele("UnitType").txt(text(fp?.name, "Unit")).up();
       unitNode.ele("UnitBedrooms").txt(decimalCount(fp?.beds ?? 0)).up();
-      unitNode.ele("UnitBathrooms").txt(decimalCount(fp?.baths ?? 0)).up();
+      unitNode.ele("UnitBathrooms").txt(decimalCount(fp?.baths ?? 1, "1.00")).up();
       unitNode.ele("MinSquareFeet").txt(text(unit.sqftMin ?? fp?.sqftMin ?? 0)).up();
       unitNode.ele("MaxSquareFeet").txt(text(unit.sqftMax ?? fp?.sqftMax ?? unit.sqftMin ?? 0)).up();
       unitNode.ele("UnitRent").txt(text(unit.rent, "0")).up();

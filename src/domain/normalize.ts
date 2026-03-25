@@ -75,6 +75,9 @@ function polishDescription(text: string): string {
     .replace(/\s*(Completion:)/g, "\n$1")
     .replace(/\s*(Community:)/g, "\n$1")
     .replace(/\s*(Features:)/g, "\n$1")
+    .replace(/\s*(Building Type:)/g, "\n$1")
+    .replace(/\s*(Suite Types:)/g, "\n$1")
+    .replace(/\s*(Built:)/g, "\n$1")
     .trim();
 }
 
@@ -165,6 +168,11 @@ function warn(scope: "property" | "unit" | "floorplan", id: string, message: str
   console.warn(`[normalize:${scope}] ${id} - ${message}`);
 }
 
+function looksHashed(value: string): boolean {
+  const s = value.trim();
+  return /^[a-f0-9]{24,}$/i.test(s) || /^[a-f0-9-]{24,}$/i.test(s);
+}
+
 function normalizeRegion(region: string, city: string): string {
   const raw = region.trim().toUpperCase();
   const cityNorm = city.trim();
@@ -195,6 +203,23 @@ function normalizeRegion(region: string, city: string): string {
 function normalizePostal(postal: string): string {
   const cleaned = postal.toUpperCase().replace(/\s+/g, " ").trim();
   return cleaned || "V0V 0V0";
+}
+
+function normalizeAmenity(value: string): string | undefined {
+  const s = value.trim();
+  if (!s) return undefined;
+  if (looksHashed(s)) return undefined;
+  if (/^\d+$/.test(s)) return undefined;
+  if (s.length < 2) return undefined;
+  return s;
+}
+
+function filterAmenities(values: string[]): string[] {
+  return uniqStrings(
+    values
+      .map((v) => normalizeAmenity(v))
+      .filter((v): v is string => Boolean(v))
+  );
 }
 
 function extractAddressPartsFromDescription(descriptionHtml: string): {
@@ -246,11 +271,6 @@ function extractImageUrlsFromRichText(html: string): string[] {
   return [...urls];
 }
 
-function looksHashed(value: string): boolean {
-  const s = value.trim();
-  return /^[a-f0-9]{24,}$/i.test(s) || /^[a-f0-9-]{24,}$/i.test(s);
-}
-
 function buildFloorplanName(unitType: string, beds: number, baths: number, sqft?: number): string {
   const clean = unitType.trim();
 
@@ -266,12 +286,51 @@ function buildFloorplanName(unitType: string, beds: number, baths: number, sqft?
 function deriveStructureType(name: string, description: string): string {
   const text = `${name} ${description}`.toLowerCase();
 
-  if (text.includes("townhome") || text.includes("townhouse")) return "Townhome";
+  if (text.includes("townhome") || text.includes("townhouse") || text.includes("duplex")) {
+    return "Townhome";
+  }
   if (text.includes("high-rise") || text.includes("high rise")) return "High Rise";
   if (text.includes("mid-rise") || text.includes("mid rise")) return "Mid Rise";
   if (text.includes("garden")) return "Garden Style";
 
   return "Apartment";
+}
+
+function isLikelyRentalProperty(name: string, description: string): boolean {
+  const hay = `${name} ${description}`.toLowerCase();
+
+  const badSignals = [
+    "theatre",
+    "office tower",
+    "commercial office",
+    "future development",
+    "coming soon development",
+    "transit station",
+    "skytrain station",
+    "retail podium",
+    "parking garage only",
+  ];
+
+  const goodSignals = [
+    "rental",
+    "apartment",
+    "townhome",
+    "townhouse",
+    "suite",
+    "suites",
+    "homes",
+    "residential",
+    "in-suite",
+    "pet-friendly",
+    "fitness centre",
+    "available",
+  ];
+
+  if (badSignals.some((x) => hay.includes(x)) && !goodSignals.some((x) => hay.includes(x))) {
+    return false;
+  }
+
+  return true;
 }
 
 function buildFallbackProperty(): Property {
@@ -315,7 +374,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     includeArchived: true,
   });
 
-  const properties: Property[] = propertiesRaw.map((p) => {
+  const propertiesPreFilter: Property[] = propertiesRaw.map((p) => {
     const d = fd(p);
     const descriptionHtml = asString(d[FIELDS.property.description]);
     const parsedAddr = extractAddressPartsFromDescription(descriptionHtml);
@@ -382,6 +441,15 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const description = polishDescription(stripHtml(descriptionHtml)) || "Description pending.";
     const structureType = deriveStructureType(name, description);
 
+    const amenities = filterAmenities([
+      asString(d[FIELDS.property.amenity1]),
+      asString(d[FIELDS.property.amenity2]),
+      asString(d[FIELDS.property.amenity3]),
+      asString(d[FIELDS.property.amenity4]),
+      asString(d[FIELDS.property.amenity5]),
+      asString(d[FIELDS.property.amenity6]),
+    ]);
+
     return {
       propertyId: p.id,
       name,
@@ -397,18 +465,19 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       email: undefined,
       website: undefined,
       description,
-      amenities: [
-        asString(d[FIELDS.property.amenity1]),
-        asString(d[FIELDS.property.amenity2]),
-        asString(d[FIELDS.property.amenity3]),
-        asString(d[FIELDS.property.amenity4]),
-        asString(d[FIELDS.property.amenity5]),
-        asString(d[FIELDS.property.amenity6]),
-      ].filter(Boolean),
+      amenities,
       images,
       structureType,
       unitCount: 0,
     };
+  });
+
+  const properties = propertiesPreFilter.filter((p) => {
+    const keep = isLikelyRentalProperty(p.name, p.description || "");
+    if (!keep) {
+      warn("property", p.propertyId, `filtered out as non-rental: ${p.name}`);
+    }
+    return keep;
   });
 
   if (properties.length === 0) {
@@ -426,8 +495,8 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
 
     let propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
     if (!propertyId || !propertyById.has(propertyId)) {
-      warn("unit", u.id, "missing or invalid propertyRef → fallback property assigned");
-      propertyId = properties[0]?.propertyId ?? "fallback-property";
+      warn("unit", u.id, "missing or invalid propertyRef → skipped");
+      continue;
     }
 
     let available = asBool(d[FIELDS.unit.available]);
@@ -447,7 +516,13 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     }
 
     const beds = asNumber(d[FIELDS.unit.beds]) ?? 0;
-    const baths = asNumber(d[FIELDS.unit.baths]) ?? 0;
+
+    let baths = asNumber(d[FIELDS.unit.baths]);
+    if (baths == null || baths <= 0) {
+      baths = 1;
+      warn("unit", u.id, "missing/invalid baths → fallback 1");
+    }
+
     const sqft = asNumber(d[FIELDS.unit.sqft]) ?? 0;
 
     const rawUnitType = asString(d[FIELDS.unit.unitType] ?? "Unit") || "Unit";
@@ -527,15 +602,27 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     }
   }
 
-  if (units.length === 0) {
-    warn("unit", "system", "no units returned from CMS");
+  const propertiesWithUnits = properties.filter((p) => {
+    const keep = (p.unitCount ?? 0) > 0;
+    if (!keep) {
+      warn("property", p.propertyId, `filtered out because no units remained: ${p.name}`);
+    }
+    return keep;
+  });
+
+  const validPropertyIds = new Set(propertiesWithUnits.map((p) => p.propertyId));
+  const cleanedFloorplans = floorplans.filter((fp) => validPropertyIds.has(fp.propertyId));
+  const cleanedUnits = units.filter((u) => validPropertyIds.has(u.propertyId));
+
+  if (cleanedUnits.length === 0) {
+    warn("unit", "system", "no units returned from CMS after filtering");
   }
 
   console.log("CANONICAL COUNTS", {
-    properties: properties.length,
-    floorplans: floorplans.length,
-    units: units.length,
+    properties: propertiesWithUnits.length,
+    floorplans: cleanedFloorplans.length,
+    units: cleanedUnits.length,
   });
 
-  return { properties, floorplans, units };
+  return { properties: propertiesWithUnits, floorplans: cleanedFloorplans, units: cleanedUnits };
 }
