@@ -66,11 +66,20 @@ const NullableDateSchema = z
     return value;
   });
 
+const QueryBoolean = z
+  .union([z.literal("true"), z.literal("false"), z.boolean()])
+  .optional()
+  .transform((value) => {
+    if (value === undefined) return undefined;
+    if (typeof value === "boolean") return value;
+    return value === "true";
+  });
+
 const SearchSchema = z.object({
   propertyId: z.string().optional(),
   propertyName: z.string().optional(),
   unitNumber: z.string().optional(),
-  available: z.coerce.boolean().optional(),
+  available: QueryBoolean,
   bedrooms: z.coerce.number().optional(),
   bathrooms: z.coerce.number().optional(),
   rentMin: z.coerce.number().optional(),
