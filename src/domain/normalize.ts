@@ -467,13 +467,13 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
   lng,
 
   phone:
-    asString(d["contact-phone"]) || undefined,
+    asString(d["office-phone"]) || undefined,
 
   email:
     asString(d["contact-email"]) || undefined,
 
   website:
-    asString(d["external-website"]) || undefined,
+    asString(d["website-url"]) || undefined,
 
   description,
   amenities,
