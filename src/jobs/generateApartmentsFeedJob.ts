@@ -1,13 +1,13 @@
 import fs from "fs";
 import path from "path";
-import { generateApartmentsFull } from "../feeds/generateFeed";
+import { buildApartmentsMitsFeed } from "../feeds/buildApartmentsMitsFeed";
 import { getCanonicalFromWebflow } from "../domain/normalize";
 
 export async function generateApartmentsFeedJob() {
-  console.log("Starting Apartments.com feed generation job...");
+  console.log("Starting Apartments.com MITS feed generation job...");
 
   const data = await getCanonicalFromWebflow();
-  const result = await generateApartmentsFull(data);
+  const result = buildApartmentsMitsFeed(data);
 
   const exportsDir = path.resolve(process.cwd(), "exports");
   if (!fs.existsSync(exportsDir)) {
@@ -17,7 +17,7 @@ export async function generateApartmentsFeedJob() {
   const filePath = path.join(exportsDir, "apartments_full.xml");
   fs.writeFileSync(filePath, result.xml);
 
-  console.log("Feed generated.");
+  console.log("MITS Feed generated.");
   console.log("Records:", result.recordCount);
   console.log("Blocked:", result.blockedCount);
 
