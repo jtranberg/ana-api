@@ -222,9 +222,10 @@ export function generateZillowFeed(
   }
 ): ZillowFeed {
   const availableOnly = opts?.availableOnly === true;
-  const siteBaseUrl =
-    cleanString(opts?.siteBaseUrl)?.replace(/\/+$/, "") ||
-    "https://wfcjan2026.webflow.io";
+ const siteBaseUrl =
+  cleanString(opts?.siteBaseUrl)?.replace(/\/+$/, "") ||
+  process.env.PUBLIC_SITE_BASE_URL ||
+  "https://www.wallfinancialcorporation.com";
 
   const propertyMap = new Map<string, Property>(
     data.properties.map((p) => [p.propertyId, p])

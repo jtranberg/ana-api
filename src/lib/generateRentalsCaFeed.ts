@@ -231,7 +231,8 @@ export function generateRentalsCaFeed(
   const availableOnly = opts?.availableOnly === true;
   const siteBaseUrl =
     cleanString(opts?.siteBaseUrl)?.replace(/\/+$/, "") ||
-    "https://wfcjan2026.webflow.io";
+    process.env.PUBLIC_SITE_BASE_URL ||
+    "https://www.wallfinancialcorporation.com";
 
   const propertyMap = new Map<string, Property>(
     data.properties.map((p) => [p.propertyId, p])
@@ -310,7 +311,6 @@ export function generateRentalsCaFeed(
       },
 
       contact,
-
       url,
       updatedAt: cleanString(unit.lastUpdated),
     };
