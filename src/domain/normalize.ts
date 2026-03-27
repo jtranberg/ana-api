@@ -378,6 +378,25 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     includeArchived: true,
   });
 
+  console.log("WEBFLOW RAW COUNTS", {
+    propertiesRaw: propertiesRaw.length,
+    unitsRaw: unitsRaw.length,
+  });
+
+  const raw802 = unitsRaw.find((u) => {
+    const d = fd(u);
+    return (
+      asString(d[FIELDS.unit.unitNumber]) === "802" ||
+      asString(d[FIELDS.unit.slug]) === "shannon-mews-unit-802" ||
+      u.id === "698cb78f826f060faff01113"
+    );
+  });
+
+  console.log("DEBUG UNIT 802 RAW", raw802 ? {
+    id: raw802.id,
+    fieldData: raw802.fieldData,
+  } : "NOT FOUND");
+
   const propertiesPreFilter: Property[] = propertiesRaw.map((p) => {
     const d = fd(p);
     const descriptionHtml = asString(d[FIELDS.property.description]);
@@ -454,34 +473,27 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       asString(d[FIELDS.property.amenity6]),
     ]);
 
-  return {
-  propertyId: p.id,
-  name,
-  address1,
-  address2: address2 || undefined,
-  city,
-  region,
-  postal,
-  country: "CA",
-  lat,
-  lng,
-
-  phone:
-    asString(d["office-phone"]) || undefined,
-
-  email:
-    asString(d["contact-email"]) || undefined,
-
-  website:
-    asString(d["website-url"]) || undefined,
-
-  description,
-  amenities,
-  images,
-  structureType,
-  unitCount: 0,
-  propertyPageSlug: asString(d[FIELDS.property.slug]) || undefined,
-};
+    return {
+      propertyId: p.id,
+      name,
+      address1,
+      address2: address2 || undefined,
+      city,
+      region,
+      postal,
+      country: "CA",
+      lat,
+      lng,
+      phone: asString(d["office-phone"]) || undefined,
+      email: asString(d["contact-email"]) || undefined,
+      website: asString(d["website-url"]) || undefined,
+      description,
+      amenities,
+      images,
+      structureType,
+      unitCount: 0,
+      propertyPageSlug: asString(d[FIELDS.property.slug]) || undefined,
+    };
   });
 
   const properties = propertiesPreFilter.filter((p) => {
@@ -597,6 +609,16 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       unitPageSlug: asString(d[FIELDS.unit.slug]) || undefined,
     });
   }
+
+  console.log(
+    "DEBUG UNIT 802 CANONICAL",
+    units.find(
+      (u) =>
+        u.unitNumber === "802" ||
+        u.unitPageSlug === "shannon-mews-unit-802" ||
+        u.unitId === "698cb78f826f060faff01113"
+    ) || "NOT FOUND"
+  );
 
   const floorplanById = new Map(floorplans.map((fp) => [fp.floorplanId, fp]));
 
