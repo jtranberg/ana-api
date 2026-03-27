@@ -14,20 +14,19 @@ import type { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 
-import { generateApartmentsFeedJob } from "./jobs/generateApartmentsFeedJob.js";
 import { getCanonicalFromWebflow } from "./domain/normalize.js";
-import { WebflowClient } from "./webflow/client.js";
-// import { generateApartmentsFull } from "./feeds/generateFeed.js";
 import { buildApartmentsMitsFeed } from "./feeds/buildApartmentsMitsFeed.js";
-
-import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
-import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter.js";
-import importRoutes from "./routes/import.routes.js";
-// import importProxyRoutes from "./routes/importProxy.routes.js";
-
-import { generateZumperFeed } from "./lib/generateZumperFeed";
-import { generateZillowFeed } from "./lib/generateZillowFeed";
+import { generateApartmentsFeedJob } from "./jobs/generateApartmentsFeedJob.js";
 import { generateRentalsCaFeed } from "./lib/generateRentalsCaFeed";
+import { generateZillowFeed } from "./lib/generateZillowFeed";
+import { generateZumperFeed } from "./lib/generateZumperFeed";
+import importRoutes from "./routes/import.routes.js";
+import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter.js";
+import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
+import { WebflowClient } from "./webflow/client.js";
+
+// import { generateApartmentsFull } from "./feeds/generateFeed.js";
+// import importProxyRoutes from "./routes/importProxy.routes.js";
 
 dotenv.config();
 
@@ -48,14 +47,21 @@ const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || "";
 const FEED_BASIC_USER = process.env.FEED_BASIC_USER || "";
 const FEED_BASIC_PASS = process.env.FEED_BASIC_PASS || "";
 
+/**
+ * Smart available window:
+ * Include units explicitly marked available, even if the available date
+ * is in the near future. This keeps "available soon" inventory in feeds.
+ */
+const FUTURE_AVAILABLE_WINDOW_DAYS = 120;
+
 const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:5174",
   "http://127.0.0.1:5174",
-  "https://wall-property-operations-platform.netlify.app",
-  "https://mailroom-portal.netlify.app",
   "https://document-portal.netlify.app",
+  "https://mailroom-portal.netlify.app",
+  "https://wall-property-operations-platform.netlify.app",
 ]);
 
 const isNetlifyPreview = (origin: string) => /^https:\/\/.*\.netlify\.app$/.test(origin);
@@ -96,9 +102,9 @@ app.options(/.*/, cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+app.use("/api", importRoutes);
 app.use("/api/webflow", webflowPropertiesRoutes);
 app.use("/api/webflow", webflowUnitsRouter);
-app.use("/api", importRoutes);
 
 // app.use("/api", importProxyRoutes);
 
@@ -112,22 +118,9 @@ const asyncHandler =
   (req: Request, res: Response, next: NextFunction) =>
     Promise.resolve(fn(req, res, next)).catch(next);
 
-function requireFeedToken(req: Request, res: Response, next: NextFunction) {
-  const headerToken = req.header("x-feed-token");
-  const queryTokenRaw = req.query.token;
-  const queryToken = Array.isArray(queryTokenRaw) ? queryTokenRaw[0] : queryTokenRaw;
-
-  const token = headerToken || queryToken;
-
-  if (!FEED_TOKEN) {
-    return res.status(500).json({ error: "FEED_TOKEN not set" });
-  }
-
-  if (typeof token !== "string" || token !== FEED_TOKEN) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  return next();
+function qBool(v: unknown) {
+  const s = String(v ?? "").toLowerCase();
+  return s === "1" || s === "true" || s === "yes";
 }
 
 function requireBasicFeedAuth(req: Request, res: Response, next: NextFunction) {
@@ -183,14 +176,30 @@ function requireDashboardTokenIfConfigured(req: Request, res: Response, next: Ne
   return next();
 }
 
-function qBool(v: unknown) {
-  const s = String(v ?? "").toLowerCase();
-  return s === "1" || s === "true" || s === "yes";
+function requireFeedToken(req: Request, res: Response, next: NextFunction) {
+  const headerToken = req.header("x-feed-token");
+  const queryTokenRaw = req.query.token;
+  const queryToken = Array.isArray(queryTokenRaw) ? queryTokenRaw[0] : queryTokenRaw;
+
+  const token = headerToken || queryToken;
+
+  if (!FEED_TOKEN) {
+    return res.status(500).json({ error: "FEED_TOKEN not set" });
+  }
+
+  if (typeof token !== "string" || token !== FEED_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  return next();
 }
 
 function filterCanonicalAvailableOnly<T extends { units: any[] }>(data: T) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() + FUTURE_AVAILABLE_WINDOW_DAYS);
 
   return {
     ...data,
@@ -205,7 +214,7 @@ function filterCanonicalAvailableOnly<T extends { units: any[] }>(data: T) {
       if (!Number.isFinite(d.getTime())) return true;
 
       d.setHours(0, 0, 0, 0);
-      return d.getTime() <= today.getTime();
+      return d.getTime() <= cutoff.getTime();
     }),
   };
 }
@@ -213,16 +222,16 @@ function filterCanonicalAvailableOnly<T extends { units: any[] }>(data: T) {
 /* =========================================================
    Health + Root
 ========================================================= */
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "syndicator-ts", time: new Date().toISOString() });
+app.get("/", (_req, res) => {
+  res.send("Syndicator is running. Try /health");
 });
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "syndicator-ts" });
 });
 
-app.get("/", (_req, res) => {
-  res.send("Syndicator is running. Try /health");
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", service: "syndicator-ts", time: new Date().toISOString() });
 });
 
 /* =========================================================
@@ -254,14 +263,6 @@ app.get("/api/runs/:id", (req, res) => {
     suggestions: [],
     exports: [
       {
-        id: "apartments_full_xml",
-        label: "Apartments.com Full Feed",
-        format: "xml",
-        auth: "basic",
-        endpoint: "/feeds/apartments/full.xml",
-        url: "/feeds/apartments/full.xml",
-      },
-      {
         id: "apartments_available_xml",
         label: "Apartments.com Available Feed",
         format: "xml",
@@ -270,36 +271,20 @@ app.get("/api/runs/:id", (req, res) => {
         url: "/feeds/apartments/full.xml?available=true",
       },
       {
-        id: "zumper_full_json",
-        label: "Zumper Full Feed",
-        format: "json",
+        id: "apartments_full_xml",
+        label: "Apartments.com Full Feed",
+        format: "xml",
         auth: "basic",
-        endpoint: "/feeds/zumper.json",
-        url: "/feeds/zumper.json",
+        endpoint: "/feeds/apartments/full.xml",
+        url: "/feeds/apartments/full.xml",
       },
       {
-        id: "zumper_available_json",
-        label: "Zumper Available Feed",
+        id: "rentals_ca_available_json",
+        label: "Rentals.ca Available Feed",
         format: "json",
         auth: "basic",
-        endpoint: "/feeds/zumper.json?available=true",
-        url: "/feeds/zumper.json?available=true",
-      },
-      {
-        id: "zillow_full_json",
-        label: "Zillow Full Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/zillow.json",
-        url: "/feeds/zillow.json",
-      },
-      {
-        id: "zillow_available_json",
-        label: "Zillow Available Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/zillow.json?available=true",
-        url: "/feeds/zillow.json?available=true",
+        endpoint: "/feeds/rentals-ca.json?available=true",
+        url: "/feeds/rentals-ca.json?available=true",
       },
       {
         id: "rentals_ca_full_json",
@@ -310,12 +295,36 @@ app.get("/api/runs/:id", (req, res) => {
         url: "/feeds/rentals-ca.json",
       },
       {
-        id: "rentals_ca_available_json",
-        label: "Rentals.ca Available Feed",
+        id: "zillow_available_json",
+        label: "Zillow Available Feed",
         format: "json",
         auth: "basic",
-        endpoint: "/feeds/rentals-ca.json?available=true",
-        url: "/feeds/rentals-ca.json?available=true",
+        endpoint: "/feeds/zillow.json?available=true",
+        url: "/feeds/zillow.json?available=true",
+      },
+      {
+        id: "zillow_full_json",
+        label: "Zillow Full Feed",
+        format: "json",
+        auth: "basic",
+        endpoint: "/feeds/zillow.json",
+        url: "/feeds/zillow.json",
+      },
+      {
+        id: "zumper_available_json",
+        label: "Zumper Available Feed",
+        format: "json",
+        auth: "basic",
+        endpoint: "/feeds/zumper.json?available=true",
+        url: "/feeds/zumper.json?available=true",
+      },
+      {
+        id: "zumper_full_json",
+        label: "Zumper Full Feed",
+        format: "json",
+        auth: "basic",
+        endpoint: "/feeds/zumper.json",
+        url: "/feeds/zumper.json",
       },
     ],
   });
@@ -349,124 +358,8 @@ app.post(
 );
 
 /* =========================================================
-   Marketplace feed endpoints (Basic Auth)
-========================================================= */
-
-/* -------------------------
-   Apartments.com XML feed
-------------------------- */
-app.get(
-  "/feeds/apartments/full.xml",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
-
-    const data = await getCanonicalFromWebflow();
-    const filtered = availableOnly ? filterCanonicalAvailableOnly(data as any) : data;
-
-    const result = buildApartmentsMitsFeed(filtered as any);
-    const xml = result.xml;
-
-    res.setHeader("Content-Type", "application/xml; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "apartments_available.xml" : "apartments_full.xml";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).send(xml);
-  })
-);
-
-/* -------------------------
-   Zumper JSON feed
-------------------------- */
-app.get(
-  "/feeds/zumper.json",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
-
-    const canonical = await getCanonicalFromWebflow();
-    const feed = generateZumperFeed(canonical, { availableOnly });
-
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "zumper_available.json" : "zumper_full.json";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).json(feed);
-  })
-);
-
-/* -------------------------
-   Zillow JSON feed
-------------------------- */
-app.get(
-  "/feeds/zillow.json",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
-
-    const canonical = await getCanonicalFromWebflow();
-    const feed = generateZillowFeed(canonical, {
-      availableOnly,
-      siteBaseUrl: process.env.SITE_BASE_URL,
-    });
-
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "zillow_available.json" : "zillow_full.json";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).json(feed);
-  })
-);
-
-/* -------------------------
-   Rentals.ca JSON feed
-------------------------- */
-app.get(
-  "/feeds/rentals-ca.json",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
-
-    const canonical = await getCanonicalFromWebflow();
-    const feed = generateRentalsCaFeed(canonical, {
-      availableOnly,
-      siteBaseUrl: process.env.SITE_BASE_URL,
-    });
-
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "rentals_ca_available.json" : "rentals_ca_full.json";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).json(feed);
-  })
-);
-
-/* =========================================================
-   Internal job + debug endpoints (FEED_TOKEN)
-========================================================= */
-app.get(
-  "/jobs/generate-apartments",
-  requireFeedToken,
-  asyncHandler(async (_req, res) => {
-    const result = await generateApartmentsFeedJob();
-    return res.json(result);
-  })
-);
-
-/* =========================================================
    Debug endpoints (protected with FEED_TOKEN)
+   Alphabetical
 ========================================================= */
 app.get("/debug/env", requireFeedToken, (_req, res) => {
   const mask = (v?: string) => (v ? v.slice(0, 6) + "…" + v.slice(-6) : null);
@@ -475,26 +368,12 @@ app.get("/debug/env", requireFeedToken, (_req, res) => {
     WEBFLOW_COLLECTION_UNITS: mask(process.env.WEBFLOW_COLLECTION_UNITS),
     WEBFLOW_COLLECTION_PROPERTIES: mask(process.env.WEBFLOW_COLLECTION_PROPERTIES),
     WEBFLOW_API_TOKEN: process.env.WEBFLOW_API_TOKEN ? "set" : "missing",
-    FEED_BASIC_USER: FEED_BASIC_USER ? "set" : "missing",
     FEED_BASIC_PASS: FEED_BASIC_PASS ? "set" : "missing",
+    FEED_BASIC_USER: FEED_BASIC_USER ? "set" : "missing",
     FEED_TOKEN: FEED_TOKEN ? "set" : "missing",
     DASHBOARD_TOKEN: DASHBOARD_TOKEN ? "set" : "missing",
   });
 });
-
-app.get(
-  "/debug/webflow",
-  requireFeedToken,
-  asyncHandler(async (_req, res) => {
-    const data = await getCanonicalFromWebflow();
-
-    res.json({
-      properties: data.properties.length,
-      floorplans: data.floorplans.length,
-      units: data.units.length,
-    });
-  })
-);
 
 app.get(
   "/debug/feed-blocked",
@@ -515,25 +394,15 @@ app.get(
 );
 
 app.get(
-  "/debug/webflow/units-sample",
+  "/debug/webflow",
   requireFeedToken,
   asyncHandler(async (_req, res) => {
-    const token = process.env.WEBFLOW_API_TOKEN!;
-    const unitsId = process.env.WEBFLOW_COLLECTION_UNITS!;
-    const client = new WebflowClient(token);
+    const data = await getCanonicalFromWebflow();
 
-    const page = await client.fetchItemsPage(unitsId, 1, 0);
-    const first = page.items?.[0];
-
-    if (!first) {
-      return res.json({ itemsOnFirstPage: 0, note: "No items returned" });
-    }
-
-    return res.json({
-      itemsOnFirstPage: page.items.length,
-      firstItemId: first.id,
-      fieldDataKeys: Object.keys(first.fieldData || {}),
-      fieldDataSample: first.fieldData,
+    res.json({
+      properties: data.properties.length,
+      floorplans: data.floorplans.length,
+      units: data.units.length,
     });
   })
 );
@@ -593,9 +462,150 @@ app.get(
   })
 );
 
+app.get(
+  "/debug/webflow/units-sample",
+  requireFeedToken,
+  asyncHandler(async (_req, res) => {
+    const token = process.env.WEBFLOW_API_TOKEN!;
+    const unitsId = process.env.WEBFLOW_COLLECTION_UNITS!;
+    const client = new WebflowClient(token);
+
+    const page = await client.fetchItemsPage(unitsId, 1, 0);
+    const first = page.items?.[0];
+
+    if (!first) {
+      return res.json({ itemsOnFirstPage: 0, note: "No items returned" });
+    }
+
+    return res.json({
+      itemsOnFirstPage: page.items.length,
+      firstItemId: first.id,
+      fieldDataKeys: Object.keys(first.fieldData || {}),
+      fieldDataSample: first.fieldData,
+    });
+  })
+);
+
+/* =========================================================
+   Marketplace feed endpoints (Basic Auth)
+   Alphabetical
+========================================================= */
+
+/* -------------------------
+   Apartments.com XML feed
+------------------------- */
+app.get(
+  "/feeds/apartments/full.xml",
+  requireBasicFeedAuth,
+  asyncHandler(async (req, res) => {
+    const availableOnly = qBool(req.query.available);
+
+    const data = await getCanonicalFromWebflow();
+    const filtered = availableOnly ? filterCanonicalAvailableOnly(data as any) : data;
+
+    const result = buildApartmentsMitsFeed(filtered as any);
+    const xml = result.xml;
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+
+    if (qBool(req.query.download)) {
+      const filename = availableOnly ? "apartments_available.xml" : "apartments_full.xml";
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+
+    return res.status(200).send(xml);
+  })
+);
+
+/* -------------------------
+   Rentals.ca JSON feed
+------------------------- */
+app.get(
+  "/feeds/rentals-ca.json",
+  requireBasicFeedAuth,
+  asyncHandler(async (req, res) => {
+    const availableOnly = qBool(req.query.available);
+
+    const canonical = await getCanonicalFromWebflow();
+    const feed = generateRentalsCaFeed(canonical, {
+      availableOnly,
+      siteBaseUrl: process.env.SITE_BASE_URL,
+    });
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+
+    if (qBool(req.query.download)) {
+      const filename = availableOnly ? "rentals_ca_available.json" : "rentals_ca_full.json";
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+
+    return res.status(200).json(feed);
+  })
+);
+
+/* -------------------------
+   Zillow JSON feed
+------------------------- */
+app.get(
+  "/feeds/zillow.json",
+  requireBasicFeedAuth,
+  asyncHandler(async (req, res) => {
+    const availableOnly = qBool(req.query.available);
+
+    const canonical = await getCanonicalFromWebflow();
+    const feed = generateZillowFeed(canonical, {
+      availableOnly,
+      siteBaseUrl: process.env.SITE_BASE_URL,
+    });
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+
+    if (qBool(req.query.download)) {
+      const filename = availableOnly ? "zillow_available.json" : "zillow_full.json";
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+
+    return res.status(200).json(feed);
+  })
+);
+
+/* -------------------------
+   Zumper JSON feed
+------------------------- */
+app.get(
+  "/feeds/zumper.json",
+  requireBasicFeedAuth,
+  asyncHandler(async (req, res) => {
+    const availableOnly = qBool(req.query.available);
+
+    const canonical = await getCanonicalFromWebflow();
+    const feed = generateZumperFeed(canonical, { availableOnly });
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+
+    if (qBool(req.query.download)) {
+      const filename = availableOnly ? "zumper_available.json" : "zumper_full.json";
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+
+    return res.status(200).json(feed);
+  })
+);
+
+/* =========================================================
+   Internal job endpoints (FEED_TOKEN)
+========================================================= */
+app.get(
+  "/jobs/generate-apartments",
+  requireFeedToken,
+  asyncHandler(async (_req, res) => {
+    const result = await generateApartmentsFeedJob();
+    return res.json(result);
+  })
+);
+
 /* =========================================================
    Optional dashboard-safe endpoints
-   Uncomment later if needed
 ========================================================= */
 // app.get(
 //   "/dashboard/feeds/apartments/full.xml",
