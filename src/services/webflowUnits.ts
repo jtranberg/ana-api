@@ -182,13 +182,11 @@ function buildPatchFromRow(r: CsvRow): Record<string, unknown> {
   const baths = toInt((r as any).bathrooms ?? (r as any).baths);
   if (baths !== undefined) patch[UNIT_FIELDS.bathrooms] = baths;
 
-  // Optional helpers
   if ((r as any).unit_number != null)
     patch[UNIT_FIELDS.unitNumber] = String((r as any).unit_number).trim();
   if ((r as any).property_id != null)
     patch[UNIT_FIELDS.propertyRef] = String((r as any).property_id).trim();
 
-  // Only touch name/slug if provided OR safely derived
   const maybeName = String((r as any).name ?? "").trim();
   const maybeSlug = String((r as any).slug ?? "").trim();
   if (maybeName) patch[UNIT_FIELDS.name] = maybeName;
@@ -204,7 +202,6 @@ function buildPatchFromRow(r: CsvRow): Record<string, unknown> {
     }
   }
 
-  // Clean out undefined/null/NaN + empty strings (avoid overwriting)
   for (const k of Object.keys(patch)) {
     const v = patch[k];
     if (v === undefined || v === null) delete patch[k];
@@ -241,17 +238,6 @@ export type ApplyUpdateOnlyResult = {
   errors: Array<Record<string, unknown>>;
 };
 
-/**
- * CSV -> PATCH existing Webflow units (update-only)
- *
- * Supported matchKey values:
- * - "unit_id"     (Webflow item id)
- * - "slug"
- * - "name"
- * - "unit_number" (requires property_id recommended)
- *
- * update-only = if no match found -> missing[], never creates.
- */
 export async function applyWebflowUnitsUpdateOnly({
   tenantId,
   matchKey,
@@ -265,16 +251,14 @@ export async function applyWebflowUnitsUpdateOnly({
   const missing: Array<Record<string, unknown>> = [];
   const errors: Array<Record<string, unknown>> = [];
 
-  const cache = new Map<string, string | null>(); // cacheKey -> unitItemId | null
+  const cache = new Map<string, string | null>();
 
   async function resolveUnitItemId(row: CsvRow): Promise<string | null> {
-    // 1) direct item id
     if (key === "unit_id") {
       const id = String((row as any).unit_id ?? "").trim();
       return id || null;
     }
 
-    // 2) slug
     if (key === "slug") {
       const slug = String((row as any).slug ?? "").trim();
       if (!slug) return null;
@@ -288,7 +272,6 @@ export async function applyWebflowUnitsUpdateOnly({
       return id;
     }
 
-    // 3) name (can be ambiguous; take first match)
     if (key === "name") {
       const name = String((row as any).name ?? "").trim();
       if (!name) return null;
@@ -303,12 +286,11 @@ export async function applyWebflowUnitsUpdateOnly({
       return id;
     }
 
-    // 4) unit_number (best if property_id is also provided)
     if (key === "unit_number") {
       const unitNumber = String((row as any).unit_number ?? "").trim();
       if (!unitNumber) return null;
 
-      const propertyId = String((row as any).property_id ?? "").trim(); // optional but recommended
+      const propertyId = String((row as any).property_id ?? "").trim();
       const cacheKey = `unit:${propertyId || "any"}:${unitNumber.toLowerCase()}`;
       if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
 
@@ -409,6 +391,31 @@ export async function listUnitsPage({
   });
 }
 
+/**
+ * NEW: fetch every unit across all Webflow pages
+ * Use this in the syndicator/canonical pipeline instead of a single listUnitsPage() call.
+ */
+export async function listAllUnits(max = 10000): Promise<WebflowV2Item[]> {
+  const all: WebflowV2Item[] = [];
+  let offset = 0;
+  const limit = 100;
+
+  while (all.length < max) {
+    const data = await listUnitsPage({ limit, offset });
+    const items = data?.items || [];
+
+    if (!items.length) break;
+
+    all.push(...items);
+
+    if (items.length < limit) break;
+
+    offset += limit;
+  }
+
+  return all;
+}
+
 export async function findUnitBySlug(slug: string): Promise<WebflowV2Item | null> {
   const data = await listUnitsPage({ limit: 10, offset: 0, slug });
   const items = data?.items || [];
@@ -464,10 +471,8 @@ export async function searchUnitsInNode(
     for (const it of items) {
       const fd = it.fieldData || {};
 
-      // propertyId (strong)
       if (propertyId && String(fd[UNIT_FIELDS.propertyRef] ?? "") !== String(propertyId)) continue;
 
-      // propertyName (friendly)
       if (wantPropName) {
         const pn = norm((fd as any)["property-name"]);
         const ps = norm((fd as any)["property-slug"]);
@@ -483,18 +488,18 @@ export async function searchUnitsInNode(
       }
 
       if (unitNumber) {
-  const unitValue = String(fd[UNIT_FIELDS.unitNumber] ?? "")
-    .toLowerCase()
-    .trim();
+        const unitValue = String(fd[UNIT_FIELDS.unitNumber] ?? "")
+          .toLowerCase()
+          .trim();
 
-  const queryValue = String(unitNumber)
-    .toLowerCase()
-    .trim();
+        const queryValue = String(unitNumber)
+          .toLowerCase()
+          .trim();
 
-  if (!unitValue.includes(queryValue)) {
-    continue;
-  }
-}
+        if (!unitValue.includes(queryValue)) {
+          continue;
+        }
+      }
 
       if (available !== undefined && Boolean(fd[UNIT_FIELDS.available]) !== Boolean(available)) {
         continue;
