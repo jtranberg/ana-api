@@ -22,11 +22,6 @@ function money(v: unknown, fallback = "0.00"): string {
   return Number.isFinite(n) ? n.toFixed(2) : fallback;
 }
 
-function decimalCount(v: unknown, fallback = "0.00"): string {
-  const n = Number(v);
-  return Number.isFinite(n) ? n.toFixed(2) : fallback;
-}
-
 function sanitizeId(v: string | undefined, fallback: string): string {
   const s = (v || "").trim();
   return s || fallback;
@@ -48,19 +43,6 @@ function toDateParts(isoLike?: string) {
   };
 }
 
-function inferFloorplanMarketRent(units: Unit[]) {
-  const rents = units
-    .map((u) => Number(u.rentMax ?? u.rent))
-    .filter((n) => Number.isFinite(n) && n >= 0);
-
-  if (!rents.length) return { min: 0, max: 0 };
-
-  return {
-    min: Math.min(...rents),
-    max: Math.max(...rents),
-  };
-}
-
 function looksLikeImageUrl(url: string): boolean {
   const s = (url || "").trim().toLowerCase();
   return s.startsWith("http://") || s.startsWith("https://");
@@ -70,8 +52,18 @@ function safeImages(images: string[]): string[] {
   return images.filter(looksLikeImageUrl).slice(0, 20);
 }
 
+function validPostal(postal?: string | null): boolean {
+  const p = (postal || "").trim().toUpperCase();
+  return Boolean(p) && p !== "V0V 0V0";
+}
+
+function validDescription(desc?: string | null): boolean {
+  const d = (desc || "").trim();
+  return Boolean(d) && d !== "Description pending.";
+}
+
 /* =========================
-   URL BUILDERS (FIXED)
+   URL BUILDERS
 ========================= */
 
 const SITE_BASE =
@@ -92,34 +84,8 @@ function buildPropertyAvailabilityURL(property: Property): string {
 }
 
 /* =========================
-   UTIL
+   IMAGE MERGE
 ========================= */
-
-function mapAmenityType(label: string): string {
-  const s = label.toLowerCase();
-
-  if (s.includes("concierge")) return "Concierge";
-  if (s.includes("package")) return "PackageReceiving";
-  if (s.includes("elevator")) return "Elevator";
-  if (s.includes("fitness")) return "FitnessCenter";
-  if (s.includes("pool")) return "Pool";
-  if (s.includes("spa")) return "Spa";
-  if (s.includes("storage")) return "StorageSpace";
-  if (s.includes("media")) return "MediaRoom";
-  if (s.includes("conference")) return "ConferenceRoom";
-
-  return "Other";
-}
-
-function validPostal(postal?: string | null): boolean {
-  const p = (postal || "").trim().toUpperCase();
-  return Boolean(p) && p !== "V0V 0V0";
-}
-
-function validDescription(desc?: string | null): boolean {
-  const d = (desc || "").trim();
-  return Boolean(d) && d !== "Description pending.";
-}
 
 function mergeUnitImages(unit: Unit, fp?: Floorplan, property?: Property): string[] {
   return unique([
@@ -134,22 +100,12 @@ function mergeUnitImages(unit: Unit, fp?: Floorplan, property?: Property): strin
 ========================= */
 
 export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuild {
-  const propertyById = new Map(data.properties.map((p) => [p.propertyId, p]));
   const floorplanById = new Map(data.floorplans.map((f) => [f.floorplanId, f]));
 
-  const floorplansByProperty = new Map<string, Floorplan[]>();
-  for (const fp of data.floorplans) {
-    const arr = floorplansByProperty.get(fp.propertyId) || [];
-    arr.push(fp);
-    floorplansByProperty.set(fp.propertyId, arr);
-  }
-
   const unitsByProperty = new Map<string, Unit[]>();
-  const unitsByFloorplan = new Map<string, Unit[]>();
-
   for (const u of data.units) {
-    (unitsByProperty.get(u.propertyId) || unitsByProperty.set(u.propertyId, []).get(u.propertyId))!.push(u);
-    (unitsByFloorplan.get(u.floorplanId) || unitsByFloorplan.set(u.floorplanId, []).get(u.floorplanId))!.push(u);
+    (unitsByProperty.get(u.propertyId) ||
+      unitsByProperty.set(u.propertyId, []).get(u.propertyId))!.push(u);
   }
 
   const root = createXmlRoot("Feed");
@@ -169,7 +125,8 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
 
     const propertyIdNode = propertyNode.ele("PropertyID");
 
-    propertyIdNode.ele("Identification")
+    propertyIdNode
+      .ele("Identification")
       .att("IDValue", property.propertyId)
       .att("IDType", "PrimaryID");
 
@@ -188,17 +145,17 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     address.ele("AddressLine1").txt(text(property.address1));
     address.ele("City").txt(text(property.city));
     address.ele("State").txt(text(property.region));
-    address.ele("PostalCode").txt(validPostal(property.postal) ? property.postal : "");
+    address.ele("PostalCode").txt(validPostal(property.postal) ? property.postal! : "");
 
-    const info = propertyNode.ele("Information");
+    const propertyInfo = propertyNode.ele("Information");
 
     if (validDescription(property.description)) {
-      info.ele("LongDescription").txt(property.description!);
+      propertyInfo.ele("LongDescription").txt(property.description!);
     }
 
     const propertyURL = buildPropertyAvailabilityURL(property);
     if (propertyURL) {
-      info.ele("PropertyAvailabilityURL").txt(propertyURL);
+      propertyInfo.ele("PropertyAvailabilityURL").txt(propertyURL);
     }
 
     for (const unit of propertyUnits) {
@@ -206,6 +163,43 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       const fp = floorplanById.get(unit.floorplanId);
       const images = safeImages(mergeUnitImages(unit, fp, property));
 
+      /* Unit identity */
+      const unitIdNode = unitNode.ele("UnitID");
+      unitIdNode
+        .ele("Identification")
+        .att("IDValue", sanitizeId(unit.unitId, unit.unitNumber || "unit-id"))
+        .att("IDType", "PrimaryID");
+
+      if (unit.unitNumber) {
+        unitNode.ele("UnitNumber").txt(unit.unitNumber);
+      }
+
+      if (fp?.name) {
+        unitNode.ele("FloorplanName").txt(fp.name);
+      }
+
+      /* Unit info */
+      const unitInfo = unitNode.ele("Information");
+
+      const rentValue = money(unit.rentMax ?? unit.rent, "");
+      if (rentValue) {
+        unitInfo.ele("MarketRent").txt(rentValue);
+      }
+
+      if (fp?.beds !== undefined && fp.beds !== null) {
+        unitInfo.ele("Bedrooms").txt(String(fp.beds));
+      }
+
+      if (fp?.baths !== undefined && fp.baths !== null) {
+        unitInfo.ele("Bathrooms").txt(String(fp.baths));
+      }
+
+      const sqft = fp?.sqftMax ?? fp?.sqftMin;
+      if (sqft !== undefined && sqft !== null) {
+        unitInfo.ele("SquareFeet").txt(String(sqft));
+      }
+
+      /* Availability */
       const availability = unitNode.ele("Availability");
 
       const parts = toDateParts(unit.availableDate);
@@ -222,6 +216,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
         availability.ele("UnitAvailabilityURL").txt(unitURL);
       }
 
+      /* Images */
       if (images.length) {
         const media = unitNode.ele("Media");
         const photos = media.ele("Photos");
