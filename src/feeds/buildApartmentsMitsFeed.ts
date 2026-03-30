@@ -153,6 +153,11 @@ function cleanBuildingName(name?: string | null): string {
   return raw.replace(/^wall\s+/i, "").trim() || raw;
 }
 
+function cleanMarketingName(name?: string | null): string {
+  const raw = text(name, "");
+  return raw.replace(/^wall\s+/i, "").trim() || raw;
+}
+
 function shortDescription(desc?: string | null): string {
   const cleaned = text(desc).replace(/\s+/g, " ").trim();
   if (!cleaned) return "";
@@ -269,7 +274,10 @@ function validateUnit(unit: Unit, property: Property, fp?: Floorplan): string[] 
    MAIN BUILDER
 ========================= */
 
-export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuild {
+export function buildApartmentsMitsFeed(
+  data: CanonicalData,
+  options?: { availableOnly?: boolean }
+): ApartmentsFeedBuild {
   const floorplanById = new Map(data.floorplans.map((f) => [f.floorplanId, f]));
 
   const floorplansByProperty = new Map<string, Floorplan[]>();
@@ -297,25 +305,28 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
   root.att("xmlns", "http://www.mitsproject.org/schema/2009");
   root.att("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
 
+  const isAvailableFeed = options?.availableOnly === true;
+
   let recordCount = 0;
   const blockedSample: Blocked[] = [];
   let blockedCount = 0;
 
   for (const property of data.properties) {
-  const propertyUnits = unitsByProperty.get(property.propertyId) || [];
-  const propertyFloorplans = floorplansByProperty.get(property.propertyId) || [];
+    const propertyUnits = unitsByProperty.get(property.propertyId) || [];
+    const propertyFloorplans = floorplansByProperty.get(property.propertyId) || [];
 
-  if (!propertyUnits.length && !propertyFloorplans.length) continue;
+    if (!propertyUnits.length && !propertyFloorplans.length) continue;
 
-  const propertyValidation = validateProperty(property);
-  if (propertyValidation.length) {
-    blockedCount++;
-    blockedSample.push({
-      unitId: `${property.propertyId}::property`,
-      reasons: propertyValidation,
-    });
-    continue;
-  }
+    const propertyValidation = validateProperty(property);
+    if (propertyValidation.length) {
+      blockedCount++;
+      blockedSample.push({
+        unitId: `${property.propertyId}::property`,
+        reasons: propertyValidation,
+      });
+      continue;
+    }
+
     const physicalProperty = root.ele("PhysicalProperty");
     const propertyNode = physicalProperty.ele("Property");
 
@@ -332,7 +343,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       .att("IDValue", sanitizeId(property.propertyId, "property-id"))
       .att("IDType", "PrimaryID");
 
-    propertyIdNode.ele("MarketingName").txt(text(property.name));
+    propertyIdNode.ele("MarketingName").txt(cleanMarketingName(property.name));
 
     const website = text(property.website);
     if (website) propertyIdNode.ele("WebSite").txt(website);
@@ -370,7 +381,19 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       structureTypeForApartmentsCom(property.structureType || property.buildingType)
     );
     propertyInfo.ele("BuildingCount").txt("1");
-    propertyInfo.ele("UnitCount").txt(String(propertyUnits.length));
+
+    const totalPropertyUnits = propertyFloorplans.reduce(
+      (sum, fp) => sum + (numberOrNull(fp.unitCount) ?? 0),
+      0
+    );
+
+    const propertyUnitCount = isAvailableFeed
+      ? propertyUnits.length
+      : totalPropertyUnits > 0
+        ? totalPropertyUnits
+        : propertyUnits.length;
+
+    propertyInfo.ele("UnitCount").txt(String(propertyUnitCount));
 
     if (validDescription(property.description)) {
       propertyInfo.ele("LongDescription").txt(property.description!);
@@ -443,8 +466,13 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     ========================= */
     for (const fp of propertyFloorplans) {
       const fpUnits = unitsByFloorplan.get(fp.floorplanId) || [];
-      const unitsAvailable =
-        numberOrNull(fp.unitsAvailable) ?? fpUnits.filter((u) => u.available).length;
+
+      const computedAvailableUnits = fpUnits.filter((u) => u.available).length;
+
+      const unitsAvailable = isAvailableFeed
+        ? computedAvailableUnits
+        : (numberOrNull(fp.unitsAvailable) ?? computedAvailableUnits);
+
       const unitCount = numberOrNull(fp.unitCount) ?? fpUnits.length;
 
       const floorplanNode = propertyNode.ele("Floorplan");

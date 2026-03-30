@@ -531,7 +531,9 @@ app.get(
     const data = await getCanonicalFromWebflow();
     const filtered = availableOnly ? filterCanonicalAvailableOnly(data as any) : data;
 
-    const result = buildApartmentsMitsFeed(filtered as any);
+    const result = buildApartmentsMitsFeed(filtered as any, {
+  availableOnly,
+});
     const xml = result.xml;
 
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
