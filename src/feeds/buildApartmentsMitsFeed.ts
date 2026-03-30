@@ -14,6 +14,8 @@ type Blocked = { unitId: string; reasons: string[] };
    HELPERS
 ========================= */
 
+
+
 function text(v: unknown, fallback = ""): string {
   if (v === undefined || v === null) return fallback;
   return String(v).trim();
