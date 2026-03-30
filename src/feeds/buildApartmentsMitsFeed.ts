@@ -302,20 +302,20 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
   let blockedCount = 0;
 
   for (const property of data.properties) {
-    const propertyUnits = unitsByProperty.get(property.propertyId) || [];
-    const propertyFloorplans = floorplansByProperty.get(property.propertyId) || [];
+  const propertyUnits = unitsByProperty.get(property.propertyId) || [];
+  const propertyFloorplans = floorplansByProperty.get(property.propertyId) || [];
 
-    if (!propertyUnits.length) continue;
+  if (!propertyUnits.length && !propertyFloorplans.length) continue;
 
-    const propertyValidation = validateProperty(property);
-    if (propertyValidation.length) {
-      blockedCount += propertyUnits.length;
-      for (const unit of propertyUnits.slice(0, 10)) {
-        blockedSample.push({ unitId: unit.unitId, reasons: propertyValidation });
-      }
-      continue;
-    }
-
+  const propertyValidation = validateProperty(property);
+  if (propertyValidation.length) {
+    blockedCount++;
+    blockedSample.push({
+      unitId: `${property.propertyId}::property`,
+      reasons: propertyValidation,
+    });
+    continue;
+  }
     const physicalProperty = root.ele("PhysicalProperty");
     const propertyNode = physicalProperty.ele("Property");
 
