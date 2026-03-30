@@ -503,12 +503,10 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       lat,
       lng,
 
-      // legacy contact
       phone: contactPhone || undefined,
       email: contactEmail || undefined,
       website: asString(d["website-url"]) || undefined,
 
-      // structured contact
       contact,
 
       managementCompany: asString(d["management-company"]) || undefined,
@@ -520,7 +518,6 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       structureType,
       buildingType: asString(d["building-type"]) || undefined,
 
-      // enrichment
       petPolicy: asString(d["pet-policy"]) || undefined,
       virtualTourUrl: asString(d["virtual-tour-url"]) || undefined,
       videoUrl: asString(d["video-url"]) || undefined,
@@ -567,14 +564,14 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     }
 
     let rentVal =
-  asNumber(d[FIELDS.unit.rent]) ??
-  asNumber(d["rent"]) ??
-  asNumber(d["price"]);
+      asNumber(d[FIELDS.unit.rent]) ??
+      asNumber(d["rent"]) ??
+      asNumber(d["price"]);
 
-if (rentVal == null || rentVal < 0) {
-  rentVal = undefined;
-  warn("unit", u.id, "missing/invalid rent → left undefined");
-}
+    if (rentVal == null || rentVal < 0) {
+      rentVal = undefined;
+      warn("unit", u.id, "missing/invalid rent → left undefined");
+    }
 
     const beds = asNumber(d[FIELDS.unit.beds]) ?? 0;
 
@@ -666,12 +663,28 @@ if (rentVal == null || rentVal < 0) {
           ]
         : undefined;
 
+    const unitNumber = asString(d[FIELDS.unit.unitNumber]) || `Unit-${u.id}`;
+    const rawUnitSlug = asString(d[FIELDS.unit.slug]);
+
+    const safeUnitPageSlug =
+      rawUnitSlug && unitNumber && rawUnitSlug.includes(unitNumber)
+        ? rawUnitSlug
+        : undefined;
+
+    if (rawUnitSlug && !safeUnitPageSlug) {
+      warn(
+        "unit",
+        u.id,
+        `slug mismatch → slug: "${rawUnitSlug}", unitNumber: "${unitNumber}"`
+      );
+    }
+
     units.push({
       unitId: u.id,
       propertyId,
       floorplanId,
 
-      unitNumber: asString(d[FIELDS.unit.unitNumber]) || `Unit-${u.id}`,
+      unitNumber,
       unitType: asString(d[FIELDS.unit.unitType]) || floorplanName,
 
       rent: rentVal,
@@ -689,7 +702,7 @@ if (rentVal == null || rentVal < 0) {
           : undefined,
 
       lastUpdated: updated,
-      unitPageSlug: asString(d[FIELDS.unit.slug]) || undefined,
+      unitPageSlug: safeUnitPageSlug,
 
       sqftMin: sqft,
       sqftMax: sqft,
