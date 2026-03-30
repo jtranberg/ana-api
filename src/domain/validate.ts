@@ -18,7 +18,8 @@ export function validateUnit(
   if (!property) reasons.push("Missing property reference");
   if (!floorplan) reasons.push("Missing floorplan reference");
 
-  if (!Number.isFinite(unit.rent) || unit.rent <= 0) reasons.push("Missing/invalid rent");
+  const rent = Number(unit.rent);
+if (!Number.isFinite(rent) || rent <= 0) reasons.push("Missing/invalid rent");
 
   if (floorplan) {
     if (!Number.isFinite(floorplan.beds)) reasons.push("Missing beds");

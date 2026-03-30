@@ -61,6 +61,15 @@ function inferFloorplanMarketRent(units: Unit[]) {
   };
 }
 
+function looksLikeImageUrl(url: string): boolean {
+  const s = (url || "").trim().toLowerCase();
+  return s.startsWith("http://") || s.startsWith("https://");
+}
+
+function safeImages(images: string[]): string[] {
+  return images.filter(looksLikeImageUrl).slice(0, 20);
+}
+
 /* =========================
    URL BUILDERS (FIXED)
 ========================= */
@@ -194,12 +203,15 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
 
     for (const unit of propertyUnits) {
       const unitNode = propertyNode.ele("ILS_Unit");
+      const fp = floorplanById.get(unit.floorplanId);
+      const images = safeImages(mergeUnitImages(unit, fp, property));
 
       const availability = unitNode.ele("Availability");
 
       const parts = toDateParts(unit.availableDate);
       if (parts) {
-        availability.ele("VacateDate")
+        availability
+          .ele("VacateDate")
           .att("Day", parts.Day)
           .att("Month", parts.Month)
           .att("Year", parts.Year);
@@ -208,6 +220,15 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       const unitURL = buildUnitAvailabilityURL(property, unit);
       if (unitURL) {
         availability.ele("UnitAvailabilityURL").txt(unitURL);
+      }
+
+      if (images.length) {
+        const media = unitNode.ele("Media");
+        const photos = media.ele("Photos");
+
+        for (const img of images) {
+          photos.ele("Photo").txt(img);
+        }
       }
 
       recordCount++;

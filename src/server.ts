@@ -204,7 +204,11 @@ function filterCanonicalAvailableOnly<T extends { units: any[] }>(data: T) {
   return {
     ...data,
     units: (data.units || []).filter((u: any) => {
-      const available = Boolean(u?.available);
+      const available =
+  u?.available === true ||
+  u?.available === "true" ||
+  u?.available === 1 ||
+  u?.available === "1";
       if (!available) return false;
 
       const dRaw = u?.availableDate;
@@ -329,6 +333,30 @@ app.get("/api/runs/:id", (req, res) => {
     ],
   });
 });
+
+import { buildLivRentFeed } from "./feeds/buildLivRentFeed.js";
+
+app.get(
+  "/feeds/liv-rent.xml",
+  requireBasicFeedAuth,
+  asyncHandler(async (req, res) => {
+    const availableOnly = qBool(req.query.available);
+
+    const canonical = await getCanonicalFromWebflow();
+    const filtered = availableOnly ? filterCanonicalAvailableOnly(canonical as any) : canonical;
+
+    const result = buildLivRentFeed(filtered as any);
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+
+    if (qBool(req.query.download)) {
+      const filename = availableOnly ? "liv_rent_available.xml" : "liv_rent_full.xml";
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+
+    return res.status(200).send(result.xml);
+  })
+);
 
 app.post(
   "/api/run",

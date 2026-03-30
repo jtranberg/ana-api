@@ -473,6 +473,24 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       asString(d[FIELDS.property.amenity6]),
     ]);
 
+    const contactName = asString(d["contact-name"]);
+    const contactPhone = asString(d["office-phone"]);
+    const contactEmail = asString(d["contact-email"]);
+
+    const contact =
+      contactName || contactPhone || contactEmail
+        ? {
+            name: contactName || undefined,
+            phone: contactPhone || undefined,
+            email: contactEmail || undefined,
+          }
+        : undefined;
+
+    const accessibility = filterAmenities([
+      asString(d["accessibility-1"]),
+      asString(d["accessibility-2"]),
+    ]);
+
     return {
       propertyId: p.id,
       name,
@@ -484,13 +502,32 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
       country: "CA",
       lat,
       lng,
-      phone: asString(d["office-phone"]) || undefined,
-      email: asString(d["contact-email"]) || undefined,
+
+      // legacy contact
+      phone: contactPhone || undefined,
+      email: contactEmail || undefined,
       website: asString(d["website-url"]) || undefined,
+
+      // structured contact
+      contact,
+
+      managementCompany: asString(d["management-company"]) || undefined,
+
       description,
       amenities,
       images,
+
       structureType,
+      buildingType: asString(d["building-type"]) || undefined,
+
+      // enrichment
+      petPolicy: asString(d["pet-policy"]) || undefined,
+      virtualTourUrl: asString(d["virtual-tour-url"]) || undefined,
+      videoUrl: asString(d["video-url"]) || undefined,
+      accessibility: accessibility.length ? accessibility : undefined,
+
+      parkingSummary: asString(d["parking"]) || undefined,
+
       unitCount: 0,
       propertyPageSlug: asString(d[FIELDS.property.slug]) || undefined,
     };
@@ -517,7 +554,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
   for (const u of unitsRaw) {
     const d = fd(u);
 
-    let propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
+    const propertyId = extractRefId(d[FIELDS.unit.propertyRef]) ?? "";
     if (!propertyId || !propertyById.has(propertyId)) {
       warn("unit", u.id, "missing or invalid propertyRef → skipped");
       continue;
@@ -530,14 +567,14 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     }
 
     let rentVal =
-      asNumber(d[FIELDS.unit.rent]) ??
-      asNumber(d["rent"]) ??
-      asNumber(d["price"]);
+  asNumber(d[FIELDS.unit.rent]) ??
+  asNumber(d["rent"]) ??
+  asNumber(d["price"]);
 
-    if (rentVal == null || rentVal < 0) {
-      rentVal = 0;
-      warn("unit", u.id, "missing/invalid rent → fallback 0");
-    }
+if (rentVal == null || rentVal < 0) {
+  rentVal = undefined;
+  warn("unit", u.id, "missing/invalid rent → left undefined");
+}
 
     const beds = asNumber(d[FIELDS.unit.beds]) ?? 0;
 
@@ -575,6 +612,7 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
             : undefined,
         unitCount: 0,
         unitsAvailable: 0,
+        unitType: rawUnitType || undefined,
       });
     }
 
@@ -587,26 +625,98 @@ export async function getCanonicalFromWebflow(): Promise<CanonicalData> {
     const updated = u.lastUpdated ? new Date(u.lastUpdated).toISOString() : isoNow();
     const inheritedUnitImages = propertyById.get(propertyId)?.images;
 
+    const utilities = filterAmenities([
+      asString(d["utilities-1"]),
+      asString(d["utilities-2"]),
+      asString(d["utilities-3"]),
+    ]);
+
+    const appliances = filterAmenities([
+      asString(d["appliance-1"]),
+      asString(d["appliance-2"]),
+      asString(d["appliance-3"]),
+    ]);
+
+    const accessibility = filterAmenities([
+      asString(d["accessibility-1"]),
+      asString(d["accessibility-2"]),
+    ]);
+
+    const parkingIncluded = asBool(d["parking-included"]);
+    const parkingFee = asNumber(d["parking-fee"]);
+    const parkingDesc = asString(d["parking"]);
+
+    const parking =
+      parkingIncluded != null || parkingFee != null || parkingDesc
+        ? {
+            included: parkingIncluded ?? undefined,
+            fee: parkingFee ?? undefined,
+            description: parkingDesc || undefined,
+          }
+        : undefined;
+
+    const moveInFee = asNumber(d["move-in-fee"]);
+    const fees =
+      moveInFee != null
+        ? [
+            {
+              type: "move-in",
+              amount: moveInFee,
+            },
+          ]
+        : undefined;
+
     units.push({
       unitId: u.id,
       propertyId,
       floorplanId,
+
       unitNumber: asString(d[FIELDS.unit.unitNumber]) || `Unit-${u.id}`,
+      unitType: asString(d[FIELDS.unit.unitType]) || floorplanName,
+
       rent: rentVal,
       rentMax: undefined,
+      priceFrequency: "monthly",
+
+      securityDeposit: asNumber(d["deposit"]) ?? undefined,
+
       available,
       availableDate,
+
       images:
         inheritedUnitImages && inheritedUnitImages.length
           ? uniqStrings(inheritedUnitImages).slice(0, 8)
           : undefined,
+
       lastUpdated: updated,
+      unitPageSlug: asString(d[FIELDS.unit.slug]) || undefined,
+
       sqftMin: sqft,
       sqftMax: sqft,
+
       occupancyStatus: available ? "Vacant" : "Occupied",
       leasedStatus: available ? "Available" : "Leased",
       vacancyClass: available ? "Unoccupied" : "Occupied",
-      unitPageSlug: asString(d[FIELDS.unit.slug]) || undefined,
+
+      leaseType: asString(d["lease-type"]) || undefined,
+      minLeaseMonths: asNumber(d["min-lease-months"]) ?? undefined,
+
+      furnished: asBool(d["furnished"]) ?? undefined,
+      airConditioning: asBool(d["air-conditioning"]) ?? undefined,
+      storageIncluded: asBool(d["storage"]) ?? undefined,
+
+      utilitiesIncluded: utilities.length ? utilities : undefined,
+      appliances: appliances.length ? appliances : undefined,
+
+      petPolicy: asString(d["pet-policy"]) || undefined,
+
+      parking,
+      fees,
+
+      accessibility: accessibility.length ? accessibility : undefined,
+
+      virtualTourUrl: asString(d["virtual-tour-url"]) || undefined,
+      videoUrl: asString(d["video-url"]) || undefined,
     });
   }
 
