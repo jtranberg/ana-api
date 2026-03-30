@@ -148,6 +148,17 @@ function buildComment(unit: Unit, property?: Property): string {
   return bits.join(" | ");
 }
 
+function cleanBuildingName(name?: string | null): string {
+  const raw = text(name, "N/A");
+  return raw.replace(/^wall\s+/i, "").trim() || raw;
+}
+
+function shortDescription(desc?: string | null): string {
+  const cleaned = text(desc).replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  return cleaned.length <= 160 ? cleaned : `${cleaned.slice(0, 157).trim()}...`;
+}
+
 /* =========================
    URL BUILDERS
 ========================= */
@@ -338,6 +349,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     address.ele("City").txt(text(property.city));
     address.ele("State").txt(text(property.region));
     address.ele("PostalCode").txt(text(property.postal));
+    address.ele("Country").txt("CA");
 
     /* =========================
        ILS IDENTIFICATION
@@ -348,7 +360,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
     ils.ele("Latitude").txt(String(numberOrNull(property.lat)!));
     ils.ele("Longitude").txt(String(numberOrNull(property.lng)!));
     ils.ele("DaylightSaving").txt("true");
-    ils.ele("TimeZone").txt("pst");
+    ils.ele("TimeZone").txt("Pacific");
 
     /* =========================
        PROPERTY INFORMATION
@@ -358,13 +370,11 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       structureTypeForApartmentsCom(property.structureType || property.buildingType)
     );
     propertyInfo.ele("BuildingCount").txt("1");
-    propertyInfo.ele("UnitCount").txt(
-      integerString(property.unitCount ?? propertyUnits.length, String(propertyUnits.length))
-    );
+    propertyInfo.ele("UnitCount").txt(String(propertyUnits.length));
 
     if (validDescription(property.description)) {
       propertyInfo.ele("LongDescription").txt(property.description!);
-      propertyInfo.ele("ShortDescription").txt(property.description!.slice(0, 300));
+      propertyInfo.ele("ShortDescription").txt(shortDescription(property.description));
     }
 
     const propertyURL = buildPropertyAvailabilityURL(property);
@@ -474,17 +484,18 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
         .map((u) => numberOrNull(u.rent ?? u.rentMax))
         .filter((n): n is number => n !== null);
 
-      if (rents.length) {
-        floorplanNode
-          .ele("MarketRent")
-          .att("Min", String(Math.round(Math.min(...rents))))
-          .att("Max", String(Math.round(Math.max(...rents))));
+      const minRent = rents.length ? Math.round(Math.min(...rents)) : 0;
+      const maxRent = rents.length ? Math.round(Math.max(...rents)) : 0;
 
-        floorplanNode
-          .ele("EffectiveRent")
-          .att("Min", String(Math.round(Math.min(...rents))))
-          .att("Max", String(Math.round(Math.max(...rents))));
-      }
+      floorplanNode
+        .ele("MarketRent")
+        .att("Min", String(minRent))
+        .att("Max", String(maxRent));
+
+      floorplanNode
+        .ele("EffectiveRent")
+        .att("Min", String(minRent))
+        .att("Max", String(maxRent));
 
       const deposit = fpUnits
         .map((u) => numberOrNull(u.securityDeposit))
@@ -540,13 +551,9 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       ilsUnit.att("IDValue", sanitizeId(unit.unitId, unit.unitNumber || "unit-id"));
       ilsUnit.att("IDType", "ILS_UnitID");
 
-      /* files */
       unitImages.forEach((img, idx) => {
         const fileNode = ilsUnit.ele("File");
-        fileNode.att(
-          "FileID",
-          `unit_${sanitizeId(unit.unitId, "unit")}_${idx + 1}`
-        );
+        fileNode.att("FileID", `unit_${sanitizeId(unit.unitId, "unit")}_${idx + 1}`);
         fileNode.att("Active", "true");
         fileNode.ele("FileType").txt(idx === 0 && !!fp?.images?.length ? "Floorplan" : "Photo");
         fileNode.ele("Name").txt(idx === 0 ? "Unit Diagram" : "Unit Photo");
@@ -558,10 +565,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
 
       if (looksLikeUrl(text(unit.virtualTourUrl || unit.videoUrl))) {
         const mediaNode = ilsUnit.ele("File");
-        mediaNode.att(
-          "FileID",
-          `unit_${sanitizeId(unit.unitId, "unit")}_tour`
-        );
+        mediaNode.att("FileID", `unit_${sanitizeId(unit.unitId, "unit")}_tour`);
         mediaNode.att("Active", "true");
         mediaNode.ele("FileType").txt("Other");
         mediaNode.ele("Name").txt("Virtual Tour");
@@ -599,7 +603,7 @@ export function buildApartmentsMitsFeed(data: CanonicalData): ApartmentsFeedBuil
       unitNode.ele("UnitLeasedStatus").txt(leasedStatusForMits(unit));
       unitNode.ele("UnitOccupancyStatus").txt(occupancyStatusForMits(unit));
       if (fp?.name) unitNode.ele("FloorplanName").txt(fp.name);
-      unitNode.ele("BuildingName").txt(text(property.name, "N/A"));
+      unitNode.ele("BuildingName").txt(cleanBuildingName(property.name));
 
       const unitAmenities = unique([
         ...(unit.appliances || []),
