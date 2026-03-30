@@ -10,7 +10,7 @@ export type LivRentFeedBuild = {
 
 function text(v: unknown, fallback = ""): string {
   if (v === undefined || v === null) return fallback;
-  return String(v);
+  return String(v).trim();
 }
 
 function money(v: unknown, fallback = "0.00"): string {
@@ -44,6 +44,11 @@ function isoNow(): string {
 function cleanEmail(v?: string | null): string {
   if (!v) return "";
   return v.replace(/^mailto:/i, "").trim();
+}
+
+function cleanPropertyName(name?: string | null): string {
+  if (!name) return "";
+  return name.replace(/^wall\s+/i, "").trim();
 }
 
 function inferUnitType(_unit: Unit, floorplan?: Floorplan): string {
@@ -178,7 +183,7 @@ export function buildLivRentFeed(data: CanonicalData): LivRentFeedBuild {
 
     const propertyNode = listing.ele("Property");
     propertyNode.ele("PropertyId").txt(text(property?.propertyId)).up();
-    propertyNode.ele("Name").txt(text(property?.name)).up();
+    propertyNode.ele("Name").txt(text(cleanPropertyName(property?.name))).up();
     propertyNode.ele("BuildingType").txt(text(buildingType)).up();
 
     const addressNode = propertyNode.ele("Address");
