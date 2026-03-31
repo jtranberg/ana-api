@@ -1,4 +1,4 @@
-const { validateUnit } = require("../src/utils/validateUnit");
+import { validateUnit } from "../src/utils/validateUnit";
 
 describe("validateUnit", () => {
   test("publishable when property and rent exist", () => {

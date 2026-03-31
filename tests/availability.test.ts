@@ -1,4 +1,4 @@
-const { isAvailableNow } = require("../src/utils/isAvailableNow");
+import { isAvailableNow } from "../src/utils/isAvailableNow";
 
 describe("isAvailableNow", () => {
   const fixedToday = new Date("2026-03-30T00:00:00Z");

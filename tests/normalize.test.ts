@@ -1,4 +1,4 @@
-const { normalizeUnit } = require("../src/utils/normalizeUnit");
+import { normalizeUnit } from "../src/utils/normalizeUnit";
 
 describe("normalizeUnit fallback behavior", () => {
   test("uses property postal code fallback when unit postal code missing", () => {
