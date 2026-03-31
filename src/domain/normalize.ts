@@ -1,7 +1,7 @@
 // src/domain/normalize.ts
-import type { CanonicalData, Property, Floorplan, Unit } from "./canonicalTypes.js";
-import type { WebflowV2Item } from "../webflow/client.js";
-import { WebflowClient } from "../webflow/client.js";
+import type { CanonicalData, Property, Floorplan, Unit } from "./canonicalTypes";
+import type { WebflowV2Item } from "../webflow/client";
+import { WebflowClient } from "../webflow/client";
 
 const FIELDS = {
   property: {

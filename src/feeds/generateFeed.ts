@@ -1,6 +1,5 @@
-// src/feeds/generateFeed.ts
-import type { CanonicalData } from "../domain/canonicalTypes.js";
-import { buildApartmentsMitsFeed } from "./buildApartmentsMitsFeed.js";
+import type { CanonicalData } from "../domain/canonicalTypes";
+import { buildApartmentsMitsFeed } from "./buildApartmentsMitsFeed";
 
 export async function generateApartmentsFull(data: CanonicalData) {
   return buildApartmentsMitsFeed(data);

@@ -1,8 +1,7 @@
 import type { Request, Response } from "express";
-import { generateApartmentsFull } from "../feeds/generateFeed.js";
-import { getCanonicalFromWebflow } from "../domain/normalize.js";
-import type { CanonicalData } from "../domain/canonicalTypes.js";
-
+import { generateApartmentsFull } from "../feeds/generateFeed";
+import { getCanonicalFromWebflow } from "../domain/normalize";
+import type { CanonicalData } from "../domain/canonicalTypes";
 // NOTE:
 // This endpoint uses REAL canonical Webflow data.
 // Old mock scaffolding removed to avoid confusion.

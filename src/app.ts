@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { apartmentsFullFeed } from "./routes/feeds";
+import livFeedRouter from "./routes/livFeed";
 
 export function createApp() {
   const app = express();
@@ -13,6 +14,7 @@ export function createApp() {
   });
 
   app.get("/feeds/apartments/full.xml", apartmentsFullFeed);
+  app.use("/feeds", livFeedRouter);
 
   return app;
 }
