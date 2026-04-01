@@ -14,8 +14,6 @@ type Blocked = { unitId: string; reasons: string[] };
    HELPERS
 ========================= */
 
-
-
 function text(v: unknown, fallback = ""): string {
   if (v === undefined || v === null) return fallback;
   return String(v).trim();
@@ -307,6 +305,8 @@ export function buildApartmentsMitsFeed(
   root.att("xmlns", "http://www.mitsproject.org/schema/2009");
   root.att("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
 
+  const physicalProperty = root.ele("PhysicalProperty");
+
   const isAvailableFeed = options?.availableOnly === true;
 
   let recordCount = 0;
@@ -329,7 +329,6 @@ export function buildApartmentsMitsFeed(
       continue;
     }
 
-    const physicalProperty = root.ele("PhysicalProperty");
     const propertyNode = physicalProperty.ele("Property");
 
     propertyNode.att("IDValue", sanitizeId(property.propertyId, "property-id"));
