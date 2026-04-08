@@ -301,9 +301,8 @@ export function buildApartmentsMitsFeed(
     unitsByFloorplan.set(u.floorplanId, arr);
   }
 
-  const root = createXmlRoot("Feed");
-  root.att("xmlns", "http://www.mitsproject.org/schema/2009");
-  root.att("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
+ const root = createXmlRoot("Feed");
+root.att("xmlns", "http://www.mitsproject.org/schema/2009");
 
   const physicalProperty = root.ele("PhysicalProperty");
 
