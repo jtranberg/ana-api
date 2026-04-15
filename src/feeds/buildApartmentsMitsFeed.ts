@@ -302,36 +302,39 @@ export function buildApartmentsMitsFeed(
   }
 
  const root = createXmlRoot("Feed");
-root.att("xmlns", "http://www.mitsproject.org/schema/2009");
 
-  const physicalProperty = root;
 
-  const isAvailableFeed = options?.availableOnly === true;
+const physicalProperty = root.ele("PhysicalProperty");
 
-  let recordCount = 0;
-  const blockedSample: Blocked[] = [];
-  let blockedCount = 0;
 
-  for (const property of data.properties) {
-    const propertyUnits = unitsByProperty.get(property.propertyId) || [];
-    const propertyFloorplans = floorplansByProperty.get(property.propertyId) || [];
+physicalProperty.att("xmlns", "http://www.mitsproject.org/schema/2009");
 
-    if (!propertyUnits.length && !propertyFloorplans.length) continue;
+const isAvailableFeed = options?.availableOnly === true;
 
-    const propertyValidation = validateProperty(property);
-    if (propertyValidation.length) {
-      blockedCount++;
-      blockedSample.push({
-        unitId: `${property.propertyId}::property`,
-        reasons: propertyValidation,
-      });
-      continue;
-    }
+let recordCount = 0;
+const blockedSample: Blocked[] = [];
+let blockedCount = 0;
 
-    const propertyNode = physicalProperty.ele("Property");
+for (const property of data.properties) {
+  const propertyUnits = unitsByProperty.get(property.propertyId) || [];
+  const propertyFloorplans = floorplansByProperty.get(property.propertyId) || [];
 
-    propertyNode.att("IDValue", sanitizeId(property.propertyId, "property-id"));
-    propertyNode.att("IDType", "PrimaryID");
+  if (!propertyUnits.length && !propertyFloorplans.length) continue;
+
+  const propertyValidation = validateProperty(property);
+  if (propertyValidation.length) {
+    blockedCount++;
+    blockedSample.push({
+      unitId: `${property.propertyId}::property`,
+      reasons: propertyValidation,
+    });
+    continue;
+  }
+
+  const propertyNode = physicalProperty.ele("Property");
+
+  propertyNode.att("IDValue", sanitizeId(property.propertyId, "property-id"));
+  propertyNode.att("IDType", "PrimaryID");
 
     /* =========================
        PROPERTY ID
