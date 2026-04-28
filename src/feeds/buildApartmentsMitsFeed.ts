@@ -307,7 +307,7 @@ export function buildApartmentsMitsFeed(
 const physicalProperty = root.ele("PhysicalProperty");
 
 
-// physicalProperty.att("xmlns", "http://www.mitsproject.org/schema/2009");
+
 
 const isAvailableFeed = options?.availableOnly === true;
 

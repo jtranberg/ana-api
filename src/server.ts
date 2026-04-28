@@ -526,14 +526,28 @@ app.get(
   "/feeds/apartments/full.xml",
   requireBasicFeedAuth,
   asyncHandler(async (req, res) => {
+    console.log("📡 Apartments.com FEED HIT", {
+      time: new Date().toISOString(),
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+      availableOnly: req.query.available,
+    });
+
     const availableOnly = qBool(req.query.available);
 
     const data = await getCanonicalFromWebflow();
     const filtered = availableOnly ? filterCanonicalAvailableOnly(data as any) : data;
 
     const result = buildApartmentsMitsFeed(filtered as any, {
-  availableOnly,
-});
+      availableOnly,
+    });
+
+    console.log("✅ Apartments.com FEED SERVED", {
+      time: new Date().toISOString(),
+      recordCount: result.recordCount,
+      blockedCount: result.blockedCount,
+    });
+
     const xml = result.xml;
 
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
