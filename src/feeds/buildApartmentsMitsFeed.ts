@@ -472,9 +472,7 @@ for (const property of data.properties) {
 
       const computedAvailableUnits = fpUnits.filter((u) => u.available).length;
 
-      const unitsAvailable = isAvailableFeed
-        ? computedAvailableUnits
-        : (numberOrNull(fp.unitsAvailable) ?? computedAvailableUnits);
+      const unitsAvailable = computedAvailableUnits;
 
       const unitCount = numberOrNull(fp.unitCount) ?? fpUnits.length;
 
