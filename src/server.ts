@@ -17,9 +17,7 @@ import cors from "cors";
 import { getCanonicalFromWebflow } from "./domain/normalize.js";
 import { buildApartmentsMitsFeed } from "./feeds/buildApartmentsMitsFeed.js";
 import { generateApartmentsFeedJob } from "./jobs/generateApartmentsFeedJob.js";
-import { generateRentalsCaFeed } from "./lib/generateRentalsCaFeed";
-import { generateZillowFeed } from "./lib/generateZillowFeed";
-import { generateZumperFeed } from "./lib/generateZumperFeed";
+
 import importRoutes from "./routes/import.routes.js";
 import webflowPropertiesRoutes from "./routes/webflowPropertiesRouter.js";
 import webflowUnitsRouter from "./routes/webflowUnitsRouter.js";
@@ -266,97 +264,39 @@ app.get("/api/runs/:id", (req, res) => {
     issues: [],
     suggestions: [],
     exports: [
-      {
-        id: "apartments_available_xml",
-        label: "Apartments.com Available Feed",
-        format: "xml",
-        auth: "basic",
-        endpoint: "/feeds/apartments/full.xml?available=true",
-        url: "/feeds/apartments/full.xml?available=true",
-      },
-      {
-        id: "apartments_full_xml",
-        label: "Apartments.com Full Feed",
-        format: "xml",
-        auth: "basic",
-        endpoint: "/feeds/apartments/full.xml",
-        url: "/feeds/apartments/full.xml",
-      },
-      {
-        id: "rentals_ca_available_json",
-        label: "Rentals.ca Available Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/rentals-ca.json?available=true",
-        url: "/feeds/rentals-ca.json?available=true",
-      },
-      {
-        id: "rentals_ca_full_json",
-        label: "Rentals.ca Full Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/rentals-ca.json",
-        url: "/feeds/rentals-ca.json",
-      },
-      {
-        id: "zillow_available_json",
-        label: "Zillow Available Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/zillow.json?available=true",
-        url: "/feeds/zillow.json?available=true",
-      },
-      {
-        id: "zillow_full_json",
-        label: "Zillow Full Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/zillow.json",
-        url: "/feeds/zillow.json",
-      },
-      {
-        id: "zumper_available_json",
-        label: "Zumper Available Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/zumper.json?available=true",
-        url: "/feeds/zumper.json?available=true",
-      },
-      {
-        id: "zumper_full_json",
-        label: "Zumper Full Feed",
-        format: "json",
-        auth: "basic",
-        endpoint: "/feeds/zumper.json",
-        url: "/feeds/zumper.json",
-      },
-    ],
+  {
+    id: "apartments_available_xml",
+    label: "Apartments.com Available Feed",
+    format: "xml",
+    auth: "basic",
+    endpoint: "/feeds/apartments/full.xml?available=true",
+    url: "/feeds/apartments/full.xml?available=true",
+  },
+
+  {
+    id: "apartments_full_xml",
+    label: "Apartments.com Full Feed",
+    format: "xml",
+    auth: "basic",
+    endpoint: "/feeds/apartments/full.xml",
+    url: "/feeds/apartments/full.xml",
+  },
+
+  {
+    id: "apartments_download_xml",
+    label: "Apartments.com Download Feed",
+    format: "xml",
+    auth: "basic",
+    endpoint: "/feeds/apartments/full.xml?available=true&download=1",
+    url: "/feeds/apartments/full.xml?available=true&download=1",
+  },
+],
   });
 });
 
-import { buildLivRentFeed } from "./feeds/buildLivRentFeed.js";
 
-app.get(
-  "/feeds/liv-rent.xml",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
 
-    const canonical = await getCanonicalFromWebflow();
-    const filtered = availableOnly ? filterCanonicalAvailableOnly(canonical as any) : canonical;
 
-    const result = buildLivRentFeed(filtered as any);
-
-    res.setHeader("Content-Type", "application/xml; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "liv_rent_available.xml" : "liv_rent_full.xml";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).send(result.xml);
-  })
-);
 
 app.post(
   "/api/run",
@@ -367,6 +307,7 @@ app.post(
       _id: `${Date.now()}`,
       tenantId,
       status: "running",
+      
       createdAt: new Date().toISOString(),
     };
 
@@ -564,77 +505,17 @@ app.get(
 /* -------------------------
    Rentals.ca JSON feed
 ------------------------- */
-app.get(
-  "/feeds/rentals-ca.json",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
 
-    const canonical = await getCanonicalFromWebflow();
-    const feed = generateRentalsCaFeed(canonical, {
-      availableOnly,
-      siteBaseUrl: process.env.SITE_BASE_URL,
-    });
-
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "rentals_ca_available.json" : "rentals_ca_full.json";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).json(feed);
-  })
-);
 
 /* -------------------------
    Zillow JSON feed
 ------------------------- */
-app.get(
-  "/feeds/zillow.json",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
 
-    const canonical = await getCanonicalFromWebflow();
-    const feed = generateZillowFeed(canonical, {
-      availableOnly,
-      siteBaseUrl: process.env.SITE_BASE_URL,
-    });
-
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "zillow_available.json" : "zillow_full.json";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).json(feed);
-  })
-);
 
 /* -------------------------
    Zumper JSON feed
 ------------------------- */
-app.get(
-  "/feeds/zumper.json",
-  requireBasicFeedAuth,
-  asyncHandler(async (req, res) => {
-    const availableOnly = qBool(req.query.available);
 
-    const canonical = await getCanonicalFromWebflow();
-    const feed = generateZumperFeed(canonical, { availableOnly });
-
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-
-    if (qBool(req.query.download)) {
-      const filename = availableOnly ? "zumper_available.json" : "zumper_full.json";
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    }
-
-    return res.status(200).json(feed);
-  })
-);
 
 /* =========================================================
    Internal job endpoints (FEED_TOKEN)
